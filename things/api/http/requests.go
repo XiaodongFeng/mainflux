@@ -59,7 +59,7 @@ func (req updateThingReq) validate() error {
 		return things.ErrUnauthorizedAccess
 	}
 
-	if req.Type == "" {
+	if req.id == "" || req.Type == "" {
 		return things.ErrMalformedEntity
 	}
 
@@ -67,8 +67,9 @@ func (req updateThingReq) validate() error {
 }
 
 type createChannelReq struct {
-	key  string
-	Name string `json:"name,omitempty"`
+	key      string
+	Name     string `json:"name,omitempty"`
+	Metadata string `json:"metadata,omitempty"`
 }
 
 func (req createChannelReq) validate() error {
@@ -80,14 +81,19 @@ func (req createChannelReq) validate() error {
 }
 
 type updateChannelReq struct {
-	key  string
-	id   string
-	Name string `json:"name,omitempty"`
+	key      string
+	id       string
+	Name     string `json:"name,omitempty"`
+	Metadata string `json:"metadata,omitempty"`
 }
 
 func (req updateChannelReq) validate() error {
 	if req.key == "" {
 		return things.ErrUnauthorizedAccess
+	}
+
+	if req.id == "" {
+		return things.ErrMalformedEntity
 	}
 
 	return nil
@@ -101,6 +107,10 @@ type viewResourceReq struct {
 func (req viewResourceReq) validate() error {
 	if req.key == "" {
 		return things.ErrUnauthorizedAccess
+	}
+
+	if req.id == "" {
+		return things.ErrMalformedEntity
 	}
 
 	return nil
@@ -133,6 +143,10 @@ type connectionReq struct {
 func (req connectionReq) validate() error {
 	if req.key == "" {
 		return things.ErrUnauthorizedAccess
+	}
+
+	if req.chanID == "" || req.thingID == "" {
+		return things.ErrMalformedEntity
 	}
 
 	return nil

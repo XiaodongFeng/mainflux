@@ -17,15 +17,15 @@ import (
 )
 
 func TestConnect(t *testing.T) {
-	channelCache := redis.NewChannelCache(cacheClient)
+	channelCache := redis.NewChannelCache(redisClient)
 
-	cid := uint64(123)
-	tid := uint64(321)
+	cid := "123"
+	tid := "321"
 
 	cases := []struct {
 		desc string
-		cid  uint64
-		tid  uint64
+		cid  string
+		tid  string
 	}{
 		{
 			desc: "connect thing to channel",
@@ -45,17 +45,17 @@ func TestConnect(t *testing.T) {
 }
 
 func TestHasThing(t *testing.T) {
-	channelCache := redis.NewChannelCache(cacheClient)
+	channelCache := redis.NewChannelCache(redisClient)
 
-	cid := uint64(123)
-	tid := uint64(321)
+	cid := "123"
+	tid := "321"
 
 	err := channelCache.Connect(cid, tid)
 	require.Nil(t, err, fmt.Sprintf("connect thing to channel: fail to connect due to: %s\n", err))
 
 	cases := map[string]struct {
-		cid       uint64
-		tid       uint64
+		cid       string
+		tid       string
 		hasAccess bool
 	}{
 		"access check for thing that has access": {
@@ -81,19 +81,19 @@ func TestHasThing(t *testing.T) {
 	}
 }
 func TestDisconnect(t *testing.T) {
-	channelCache := redis.NewChannelCache(cacheClient)
+	channelCache := redis.NewChannelCache(redisClient)
 
-	cid := uint64(123)
-	tid := uint64(321)
-	tid2 := uint64(322)
+	cid := "123"
+	tid := "321"
+	tid2 := "322"
 
 	err := channelCache.Connect(cid, tid)
 	require.Nil(t, err, fmt.Sprintf("connect thing to channel: fail to connect due to: %s\n", err))
 
 	cases := []struct {
 		desc      string
-		cid       uint64
-		tid       uint64
+		cid       string
+		tid       string
 		hasAccess bool
 	}{
 		{
@@ -119,19 +119,19 @@ func TestDisconnect(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	channelCache := redis.NewChannelCache(cacheClient)
+	channelCache := redis.NewChannelCache(redisClient)
 
-	cid := uint64(123)
-	cid2 := uint64(124)
-	tid := uint64(321)
+	cid := "123"
+	cid2 := "124"
+	tid := "321"
 
 	err := channelCache.Connect(cid, tid)
 	require.Nil(t, err, fmt.Sprintf("connect thing to channel: fail to connect due to: %s\n", err))
 
 	cases := []struct {
 		desc      string
-		cid       uint64
-		tid       uint64
+		cid       string
+		tid       string
 		err       error
 		hasAccess bool
 	}{

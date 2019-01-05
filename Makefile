@@ -1,5 +1,5 @@
 BUILD_DIR = build
-SERVICES = users things http normalizer ws coap influxdb-writer influxdb-reader mongodb-writer mongodb-reader cassandra-writer cassandra-reader cli
+SERVICES = users things http normalizer ws coap lora influxdb-writer influxdb-reader mongodb-writer mongodb-reader cassandra-writer cassandra-reader cli
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 CGO_ENABLED ?= 0
@@ -24,6 +24,23 @@ all: $(SERVICES) mqtt
 clean:
 	rm -rf ${BUILD_DIR}
 	rm -rf mqtt/node_modules
+
+cleandocker: cleanghost
+	# Stop all containers (if running)
+	docker-compose -f docker/docker-compose.yml stop
+	# Remove mainflux containers
+	docker ps -f name=mainflux -aq | xargs -r docker rm
+	# Remove old mainflux images
+	docker images -q mainflux\/* | xargs -r docker rmi
+
+# Clean ghost docker images
+cleanghost:
+	# Remove exited containers
+	docker ps -f status=dead -f status=exited -aq | xargs -r docker rm -v
+	# Remove unused images
+	docker images -f dangling=true -q | xargs -r docker rmi
+	# Remove unused volumes
+	docker volume ls -f dangling=true -q | xargs -r docker volume rm
 
 install:
 	cp ${BUILD_DIR}/* $(GOBIN)
@@ -60,6 +77,9 @@ define docker_push
 	docker push mainflux/mqtt:$(1)
 endef
 
+changelog:
+	git log $(shell git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
+
 latest: dockers
 	$(call docker_push,latest)
 
@@ -79,3 +99,8 @@ rundev:
 
 run:
 	docker-compose -f docker/docker-compose.yml up
+
+runlora:
+	docker-compose -f docker/docker-compose.yml up -d
+	docker-compose -f docker/addons/influxdb-writer/docker-compose.yml up -d
+	docker-compose -f docker/addons/lora-adapter/docker-compose.yml up

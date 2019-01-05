@@ -15,11 +15,24 @@ import (
 	migrate "github.com/rubenv/sql-migrate"
 )
 
+// Config defines the options that are used when connecting to a PostgreSQL instance
+type Config struct {
+	Host        string
+	Port        string
+	User        string
+	Pass        string
+	Name        string
+	SSLMode     string
+	SSLCert     string
+	SSLKey      string
+	SSLRootCert string
+}
+
 // Connect creates a connection to the PostgreSQL instance and applies any
 // unapplied database migrations. A non-nil error is returned to indicate
 // failure.
-func Connect(host, port, name, user, pass, sslMode string) (*sql.DB, error) {
-	url := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s", host, port, user, name, pass, sslMode)
+func Connect(cfg Config) (*sql.DB, error) {
+	url := fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s sslcert=%s sslkey=%s sslrootcert=%s", cfg.Host, cfg.Port, cfg.User, cfg.Name, cfg.Pass, cfg.SSLMode, cfg.SSLCert, cfg.SSLKey, cfg.SSLRootCert)
 
 	db, err := sql.Open("postgres", url)
 	if err != nil {
@@ -40,25 +53,26 @@ func migrateDB(db *sql.DB) error {
 				Id: "things_1",
 				Up: []string{
 					`CREATE TABLE IF NOT EXISTS things (
-						id      BIGSERIAL,
-						owner   VARCHAR(254),
-						type    VARCHAR(10) NOT NULL,
-						key     CHAR(36) UNIQUE NOT NULL,
-						name    TEXT,
-						metadata TEXT,
+						id       UUID,
+						owner    VARCHAR(254),
+						type     VARCHAR(10) NOT NULL,
+						key      CHAR(36) UNIQUE NOT NULL,
+						name     TEXT,
+						metadata JSON,
 						PRIMARY KEY (id, owner)
 					)`,
 					`CREATE TABLE IF NOT EXISTS channels (
-						id    BIGSERIAL,
-						owner VARCHAR(254),
-						name  TEXT,
+						id       UUID,
+						owner    VARCHAR(254),
+						name     TEXT,
+						metadata JSON,
 						PRIMARY KEY (id, owner)
 					)`,
 					`CREATE TABLE IF NOT EXISTS connections (
-						channel_id    BIGINT,
+						channel_id    UUID,
 						channel_owner VARCHAR(254),
-						thing_id     BIGINT,
-						thing_owner  VARCHAR(254),
+						thing_id      UUID,
+						thing_owner   VARCHAR(254),
 						FOREIGN KEY (channel_id, channel_owner) REFERENCES channels (id, owner) ON DELETE CASCADE ON UPDATE CASCADE,
 						FOREIGN KEY (thing_id, thing_owner) REFERENCES things (id, owner) ON DELETE CASCADE ON UPDATE CASCADE,
 						PRIMARY KEY (channel_id, channel_owner, thing_id, thing_owner)

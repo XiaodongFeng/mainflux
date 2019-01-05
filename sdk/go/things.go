@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
 const thingsEndpoint = "things"
@@ -23,7 +24,7 @@ func (sdk mfSDK) CreateThing(thing Thing, token string) (string, error) {
 		return "", ErrInvalidArgs
 	}
 
-	url := createURL(sdk.url, sdk.thingsPrefix, thingsEndpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, thingsEndpoint)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
@@ -42,19 +43,18 @@ func (sdk mfSDK) CreateThing(thing Thing, token string) (string, error) {
 			return "", ErrInvalidArgs
 		case http.StatusForbidden:
 			return "", ErrUnauthorized
-		case http.StatusConflict:
-			return "", ErrConflict
 		default:
 			return "", ErrFailedCreation
 		}
 	}
 
-	return resp.Header.Get("Location"), nil
+	id := strings.TrimPrefix(resp.Header.Get("Location"), fmt.Sprintf("/%s/", thingsEndpoint))
+	return id, nil
 }
 
 func (sdk mfSDK) Things(token string, offset, limit uint64) ([]Thing, error) {
 	endpoint := fmt.Sprintf("%s?offset=%d&limit=%d", thingsEndpoint, offset, limit)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -93,7 +93,7 @@ func (sdk mfSDK) Things(token string, offset, limit uint64) ([]Thing, error) {
 
 func (sdk mfSDK) Thing(id, token string) (Thing, error) {
 	endpoint := fmt.Sprintf("%s/%s", thingsEndpoint, id)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -137,7 +137,7 @@ func (sdk mfSDK) UpdateThing(thing Thing, token string) error {
 	}
 
 	endpoint := fmt.Sprintf("%s/%s", thingsEndpoint, thing.ID)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodPut, url, bytes.NewReader(data))
 	if err != nil {
@@ -167,7 +167,7 @@ func (sdk mfSDK) UpdateThing(thing Thing, token string) error {
 
 func (sdk mfSDK) DeleteThing(id, token string) error {
 	endpoint := fmt.Sprintf("%s/%s", thingsEndpoint, id)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
@@ -183,6 +183,8 @@ func (sdk mfSDK) DeleteThing(id, token string) error {
 		switch resp.StatusCode {
 		case http.StatusForbidden:
 			return ErrUnauthorized
+		case http.StatusBadRequest:
+			return ErrInvalidArgs
 		default:
 			return ErrFailedRemoval
 		}
@@ -193,7 +195,7 @@ func (sdk mfSDK) DeleteThing(id, token string) error {
 
 func (sdk mfSDK) ConnectThing(thingID, chanID, token string) error {
 	endpoint := fmt.Sprintf("%s/%s/%s/%s", channelsEndpoint, chanID, thingsEndpoint, thingID)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodPut, url, nil)
 	if err != nil {
@@ -221,7 +223,7 @@ func (sdk mfSDK) ConnectThing(thingID, chanID, token string) error {
 
 func (sdk mfSDK) DisconnectThing(thingID, chanID, token string) error {
 	endpoint := fmt.Sprintf("%s/%s/%s/%s", channelsEndpoint, chanID, thingsEndpoint, thingID)
-	url := createURL(sdk.url, sdk.thingsPrefix, endpoint)
+	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {

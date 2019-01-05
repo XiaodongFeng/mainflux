@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-zoo/bone"
@@ -38,6 +37,7 @@ var (
 	errBadOption  = errors.New("bad option")
 	auth          mainflux.ThingsServiceClient
 	logger        log.Logger
+	pingPeriod    time.Duration
 )
 
 type handler func(conn *net.UDPConn, addr *net.UDPAddr, msg *gocoap.Message) *gocoap.Message
@@ -62,10 +62,10 @@ func MakeHTTPHandler() http.Handler {
 }
 
 // MakeCOAPHandler creates handler for CoAP messages.
-func MakeCOAPHandler(svc coap.Service, tc mainflux.ThingsServiceClient, l log.Logger, responses chan<- string) gocoap.Handler {
+func MakeCOAPHandler(svc coap.Service, tc mainflux.ThingsServiceClient, l log.Logger, responses chan<- string, pp time.Duration) gocoap.Handler {
 	auth = tc
 	logger = l
-
+	pingPeriod = pp
 	r := mux.NewRouter()
 	r.Handle("/channels/{id}/messages", gocoap.FuncHandler(receive(svc))).Methods(gocoap.POST)
 	r.Handle("/channels/{id}/messages", gocoap.FuncHandler(observe(svc, responses)))
@@ -74,7 +74,7 @@ func MakeCOAPHandler(svc coap.Service, tc mainflux.ThingsServiceClient, l log.Lo
 	return r
 }
 
-func authorize(msg *gocoap.Message, res *gocoap.Message, cid uint64) (uint64, error) {
+func authorize(msg *gocoap.Message, res *gocoap.Message, cid string) (string, error) {
 	// Device Key is passed as Uri-Query parameter, which option ID is 15 (0xf).
 	key, err := authKey(msg.Option(gocoap.URIQuery))
 	if err != nil {
@@ -85,7 +85,7 @@ func authorize(msg *gocoap.Message, res *gocoap.Message, cid uint64) (uint64, er
 			res.Code = gocoap.BadRequest
 		}
 
-		return 0, err
+		return "", err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -102,7 +102,7 @@ func authorize(msg *gocoap.Message, res *gocoap.Message, cid uint64) (uint64, er
 			default:
 				res.Code = gocoap.ServiceUnavailable
 			}
-			return 0, err
+			return "", err
 		}
 		res.Code = gocoap.InternalServerError
 	}
@@ -133,22 +133,20 @@ func receive(svc coap.Service) handler {
 			}
 		}
 
-		channelID := mux.Var(msg, "id")
-
-		cid, err := strconv.ParseUint(channelID, 10, 64)
-		if err != nil {
+		chanID := mux.Var(msg, "id")
+		if chanID == "" {
 			res.Code = gocoap.NotFound
 			return res
 		}
 
-		publisher, err := authorize(msg, res, cid)
+		publisher, err := authorize(msg, res, chanID)
 		if err != nil {
 			res.Code = gocoap.Forbidden
 			return res
 		}
 
 		rawMsg := mainflux.RawMessage{
-			Channel:   cid,
+			Channel:   chanID,
 			Publisher: publisher,
 			Protocol:  protocol,
 			Payload:   msg.Payload,
@@ -173,9 +171,8 @@ func observe(svc coap.Service, responses chan<- string) handler {
 		}
 		res.SetOption(gocoap.ContentFormat, gocoap.AppJSON)
 
-		id := mux.Var(msg, "id")
-		chanID, err := strconv.ParseUint(id, 10, 64)
-		if err != nil {
+		chanID := mux.Var(msg, "id")
+		if chanID == "" {
 			res.Code = gocoap.NotFound
 			return res
 		}
@@ -187,7 +184,7 @@ func observe(svc coap.Service, responses chan<- string) handler {
 			return res
 		}
 
-		obsID := fmt.Sprintf("%x-%d-%d", msg.Token, publisher, chanID)
+		obsID := fmt.Sprintf("%x-%s-%s", msg.Token, publisher, chanID)
 
 		if msg.Type == gocoap.Acknowledgement {
 			responses <- obsID
@@ -262,8 +259,8 @@ func ping(svc coap.Service, obsID string, conn *net.UDPConn, addr *net.UDPAddr, 
 	pingMsg.Type = gocoap.Confirmable
 	pingMsg.RemoveOption(gocoap.URIQuery)
 	// According to RFC (https://tools.ietf.org/html/rfc7641#page-18), CON message must be sent at least every
-	// 24 hours. Since 24 hours is too long for our purposes, we use 12.
-	t := time.NewTicker(12 * time.Hour)
+	// 24 hours. Deafault value of pingPeriod is 12.
+	t := time.NewTicker(pingPeriod * time.Hour)
 	defer t.Stop()
 	for {
 		select {

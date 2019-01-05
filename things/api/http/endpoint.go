@@ -9,7 +9,6 @@ package http
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/go-kit/kit/endpoint"
 	"github.com/mainflux/mainflux/things"
@@ -34,7 +33,7 @@ func addThingEndpoint(svc things.Service) endpoint.Endpoint {
 		}
 
 		res := thingRes{
-			id:      strconv.FormatUint(saved.ID, 10),
+			id:      saved.ID,
 			created: true,
 		}
 		return res, nil
@@ -49,13 +48,8 @@ func updateThingEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
 		thing := things.Thing{
-			ID:       id,
+			ID:       req.id,
 			Type:     req.Type,
 			Name:     req.Name,
 			Metadata: req.Metadata,
@@ -78,18 +72,13 @@ func viewThingEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		thing, err := svc.ViewThing(req.key, id)
+		thing, err := svc.ViewThing(req.key, req.id)
 		if err != nil {
 			return nil, err
 		}
 
 		res := viewThingRes{
-			ID:       strconv.FormatUint(thing.ID, 10),
+			ID:       thing.ID,
 			Owner:    thing.Owner,
 			Type:     thing.Type,
 			Name:     thing.Name,
@@ -116,7 +105,7 @@ func listThingsEndpoint(svc things.Service) endpoint.Endpoint {
 		res := listThingsRes{}
 		for _, thing := range things {
 			view := viewThingRes{
-				ID:       strconv.FormatUint(thing.ID, 10),
+				ID:       thing.ID,
 				Owner:    thing.Owner,
 				Type:     thing.Type,
 				Name:     thing.Name,
@@ -143,12 +132,7 @@ func removeThingEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		if err := svc.RemoveThing(req.key, id); err != nil {
+		if err := svc.RemoveThing(req.key, req.id); err != nil {
 			return nil, err
 		}
 
@@ -164,14 +148,14 @@ func createChannelEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		channel := things.Channel{Name: req.Name}
+		channel := things.Channel{Name: req.Name, Metadata: req.Metadata}
 		saved, err := svc.CreateChannel(req.key, channel)
 		if err != nil {
 			return nil, err
 		}
 
 		res := channelRes{
-			id:      strconv.FormatUint(saved.ID, 10),
+			id:      saved.ID,
 			created: true,
 		}
 		return res, nil
@@ -186,21 +170,17 @@ func updateChannelEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
 		channel := things.Channel{
-			ID:   id,
-			Name: req.Name,
+			ID:       req.id,
+			Name:     req.Name,
+			Metadata: req.Metadata,
 		}
 		if err := svc.UpdateChannel(req.key, channel); err != nil {
 			return nil, err
 		}
 
 		res := channelRes{
-			id:      strconv.FormatUint(id, 10),
+			id:      req.id,
 			created: false,
 		}
 		return res, nil
@@ -215,24 +195,20 @@ func viewChannelEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		channel, err := svc.ViewChannel(req.key, id)
+		channel, err := svc.ViewChannel(req.key, req.id)
 		if err != nil {
 			return nil, err
 		}
 
 		res := viewChannelRes{
-			ID:    strconv.FormatUint(channel.ID, 10),
-			Owner: channel.Owner,
-			Name:  channel.Name,
+			ID:       channel.ID,
+			Owner:    channel.Owner,
+			Name:     channel.Name,
+			Metadata: channel.Metadata,
 		}
 		for _, thing := range channel.Things {
 			view := viewThingRes{
-				ID:       strconv.FormatUint(thing.ID, 10),
+				ID:       thing.ID,
 				Owner:    thing.Owner,
 				Type:     thing.Type,
 				Name:     thing.Name,
@@ -263,15 +239,16 @@ func listChannelsEndpoint(svc things.Service) endpoint.Endpoint {
 		// Cast channels
 		for _, channel := range channels {
 			cView := viewChannelRes{
-				ID:    strconv.FormatUint(channel.ID, 10),
-				Owner: channel.Owner,
-				Name:  channel.Name,
+				ID:       channel.ID,
+				Owner:    channel.Owner,
+				Name:     channel.Name,
+				Metadata: channel.Metadata,
 			}
 
 			// Cast things
 			for _, thing := range channel.Things {
 				tView := viewThingRes{
-					ID:       strconv.FormatUint(thing.ID, 10),
+					ID:       thing.ID,
 					Owner:    thing.Owner,
 					Type:     thing.Type,
 					Name:     thing.Name,
@@ -299,12 +276,7 @@ func removeChannelEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		id, err := strconv.ParseUint(req.id, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		if err := svc.RemoveChannel(req.key, id); err != nil {
+		if err := svc.RemoveChannel(req.key, req.id); err != nil {
 			return nil, err
 		}
 
@@ -320,17 +292,7 @@ func connectEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		chanID, err := strconv.ParseUint(cr.chanID, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		thingID, err := strconv.ParseUint(cr.thingID, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		if err := svc.Connect(cr.key, chanID, thingID); err != nil {
+		if err := svc.Connect(cr.key, cr.chanID, cr.thingID); err != nil {
 			return nil, err
 		}
 
@@ -346,17 +308,7 @@ func disconnectEndpoint(svc things.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		chanID, err := strconv.ParseUint(cr.chanID, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		thingID, err := strconv.ParseUint(cr.thingID, 10, 64)
-		if err != nil {
-			return nil, things.ErrMalformedEntity
-		}
-
-		if err := svc.Disconnect(cr.key, chanID, thingID); err != nil {
+		if err := svc.Disconnect(cr.key, cr.chanID, cr.thingID); err != nil {
 			return nil, err
 		}
 
