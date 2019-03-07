@@ -1,3 +1,8 @@
+// Copyright (c) 2015-2019
+// Mainflux
+//
+// SPDX-License-Identifier: Apache-2.0
+
 'use strict';
 
 var http = require('http'),
@@ -80,15 +85,15 @@ function startMqtt() {
     return net.createServer(aedes.handle).listen(config.mqtt_port);
 }
 
-nats.subscribe('channel.*', function (msg) {
+nats.subscribe('channel.*', {'queue':'mqtts'}, function (msg) {
     var m = message.RawMessage.decode(Buffer.from(msg)),
         packet;
-    if (m && m.Protocol !== 'mqtt') {
+    if (m && m.protocol !== 'mqtt') {
         packet = {
             cmd: 'publish',
             qos: 2,
-            topic: 'channels/' + m.Channel + '/messages',
-            payload: m.Payload,
+            topic: 'channels/' + m.channel + '/messages',
+            payload: m.payload,
             retain: false
         };
 
@@ -98,7 +103,8 @@ nats.subscribe('channel.*', function (msg) {
 
 aedes.authorizePublish = function (client, packet, publish) {
     // Topics are in the form `channels/<channel_id>/messages`
-    var channel = /^channels\/(.+?)\/messages$/.exec(packet.topic);
+    // Subtopic's are in the form `channels/<channel_id>/messages/<subtopic>`
+    var channel = /^channels\/(.+?)\/messages\/?.*$/.exec(packet.topic);
     if (!channel) {
         logger.warn('unknown topic');
         publish(4); // Bad username or password
@@ -109,18 +115,30 @@ aedes.authorizePublish = function (client, packet, publish) {
             token: client.password,
             chanID: channelId
         },
+        // Parse unlimited subtopics
+        baseLength = 3, // First 3 elements which represents the base part of topic.
+        elements = packet.topic.split('/').slice(baseLength),
+        baseTopic = 'channel.' + channelId;
+    // Remove empty elements
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i] === '') {
+        elements.pop(i)
+      }
+    }
+    var channelTopic = elements.length ? baseTopic + '.' + elements.join('.') : baseTopic,
+
         onAuthorize = function (err, res) {
             var rawMsg;
             if (!err) {
                 logger.info('authorized publish');
 
                 rawMsg = message.RawMessage.encode({
-                    Publisher: client.thingId,
-                    Channel: channelId,
-                    Protocol: 'mqtt',
-                    Payload: packet.payload
+                    publisher: client.thingId,
+                    channel: channelId,
+                    protocol: 'mqtt',
+                    payload: packet.payload
                 });
-                nats.publish('channel.' + channelId, rawMsg);
+                nats.publish(channelTopic, rawMsg);
 
                 publish(0);
             } else {
@@ -135,8 +153,14 @@ aedes.authorizePublish = function (client, packet, publish) {
 
 aedes.authorizeSubscribe = function (client, packet, subscribe) {
     // Topics are in the form `channels/<channel_id>/messages`
-    var channel = /^channels\/(.+?)\/messages$/.exec(packet.topic),
-        channelId = channel[1],
+    // Subtopic's are in the form `channels/<channel_id>/messages/<subtopic>`
+    var channel = /^channels\/(.+?)\/messages\/?.*$/.exec(packet.topic);
+    if (!channel) {
+      logger.warn('unknown topic');
+      subscribe(4, packet); // Bad username or password
+      return;
+    }
+    var channelId = channel[1],
         accessReq = {
             token: client.password,
             chanID: channelId

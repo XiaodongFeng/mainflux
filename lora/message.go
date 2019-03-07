@@ -29,15 +29,16 @@ type TxInfo struct {
 
 // Message lora msg (www.loraserver.io/lora-app-server/integrate/data/)
 type Message struct {
-	ApplicationID       string `json:"applicationID"`
-	ApplicationName     string `json:"applicationName"`
-	DeviceName          string `json:"deviceName"`
-	DevEUI              string `json:"devEUI"`
-	DeviceStatusBattery string `json:"deviceStatusBattery"`
-	DeviceStatusMrgin   string `json:"deviceStatusMargin"`
-	RxInfo              RxInfo `json:"rxInfo"`
-	TxInfo              TxInfo `json:"txInfo"`
-	FCnt                int    `json:"fCnt"`
-	FPort               int    `json:"fPort"`
-	Data                string `json:"data"`
+	ApplicationID       string      `json:"applicationID"`
+	ApplicationName     string      `json:"applicationName"`
+	DeviceName          string      `json:"deviceName"`
+	DevEUI              string      `json:"devEUI"`
+	DeviceStatusBattery string      `json:"deviceStatusBattery"`
+	DeviceStatusMrgin   string      `json:"deviceStatusMargin"`
+	RxInfo              RxInfo      `json:"rxInfo"`
+	TxInfo              TxInfo      `json:"txInfo"`
+	FCnt                int         `json:"fCnt"`
+	FPort               int         `json:"fPort"`
+	Data                string      `json:"data"`
+	Object              interface{} `json:"object"`
 }

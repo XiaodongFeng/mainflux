@@ -15,13 +15,12 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-
-	"github.com/mainflux/mainflux/bootstrap"
+	"strings"
 
 	kithttp "github.com/go-kit/kit/transport/http"
-
 	"github.com/go-zoo/bone"
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/bootstrap"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -34,7 +33,8 @@ const (
 var (
 	errUnsupportedContentType = errors.New("unsupported content type")
 	errInvalidQueryParams     = errors.New("invalid query params")
-	validParams               = []string{"state", "external_id", "mainflux_id", "mainflux_key"}
+	fullMatch                 = []string{"state", "external_id", "mainflux_id", "mainflux_key"}
+	partialMatch              = []string{"name"}
 )
 
 // MakeHandler returns a HTTP handler for API endpoints.
@@ -44,49 +44,55 @@ func MakeHandler(svc bootstrap.Service, reader bootstrap.ConfigReader) http.Hand
 	}
 	r := bone.New()
 
-	r.Post("/configs", kithttp.NewServer(
+	r.Post("/things/configs", kithttp.NewServer(
 		addEndpoint(svc),
 		decodeAddRequest,
 		encodeResponse,
 		opts...))
 
-	r.Get("/configs/:id", kithttp.NewServer(
+	r.Get("/things/configs/:id", kithttp.NewServer(
 		viewEndpoint(svc),
 		decodeEntityRequest,
 		encodeResponse,
 		opts...))
 
-	r.Put("/configs/:id", kithttp.NewServer(
+	r.Put("/things/configs/:id", kithttp.NewServer(
 		updateEndpoint(svc),
 		decodeUpdateRequest,
 		encodeResponse,
 		opts...))
 
-	r.Get("/configs", kithttp.NewServer(
+	r.Put("/things/configs/connections/:id", kithttp.NewServer(
+		updateConnEndpoint(svc),
+		decodeUpdateConnRequest,
+		encodeResponse,
+		opts...))
+
+	r.Get("/things/configs", kithttp.NewServer(
 		listEndpoint(svc),
 		decodeListRequest,
 		encodeResponse,
 		opts...))
 
-	r.Get("/unknown", kithttp.NewServer(
+	r.Get("/things/unknown/configs", kithttp.NewServer(
 		listEndpoint(svc),
 		decodeUnknownRequest,
 		encodeResponse,
 		opts...))
 
-	r.Get("/bootstrap/:external_id", kithttp.NewServer(
+	r.Get("/things/bootstrap/:external_id", kithttp.NewServer(
 		bootstrapEndpoint(svc, reader),
 		decodeBootstrapRequest,
 		encodeResponse,
 		opts...))
 
-	r.Put("/state/:id", kithttp.NewServer(
+	r.Put("/things/state/:id", kithttp.NewServer(
 		stateEndpoint(svc),
 		decodeStateRequest,
 		encodeResponse,
 		opts...))
 
-	r.Delete("/configs/:id", kithttp.NewServer(
+	r.Delete("/things/configs/:id", kithttp.NewServer(
 		removeEndpoint(svc),
 		decodeEntityRequest,
 		encodeResponse,
@@ -125,6 +131,20 @@ func decodeUpdateRequest(_ context.Context, r *http.Request) (interface{}, error
 	return req, nil
 }
 
+func decodeUpdateConnRequest(_ context.Context, r *http.Request) (interface{}, error) {
+	if r.Header.Get("Content-Type") != contentType {
+		return nil, errUnsupportedContentType
+	}
+
+	req := updateConnReq{key: r.Header.Get("Authorization")}
+	req.id = bone.GetValue(r, "id")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func decodeUnknownRequest(_ context.Context, r *http.Request) (interface{}, error) {
 	q, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
@@ -138,7 +158,7 @@ func decodeUnknownRequest(_ context.Context, r *http.Request) (interface{}, erro
 
 	req := listReq{
 		key:    r.Header.Get("Authorization"),
-		filter: bootstrap.Filter{"unknown": "true"},
+		filter: bootstrap.Filter{Unknown: true},
 		offset: offset,
 		limit:  limit,
 	}
@@ -257,6 +277,7 @@ func parseUint(s string) (uint64, error) {
 	if err != nil {
 		return 0, errInvalidQueryParams
 	}
+
 	return ret, nil
 }
 
@@ -285,12 +306,19 @@ func parsePagePrams(q url.Values) (uint64, uint64, error) {
 }
 
 func parseFilter(values url.Values) bootstrap.Filter {
-	ret := bootstrap.Filter{}
+	ret := bootstrap.Filter{
+		FullMatch:    make(map[string]string),
+		PartialMatch: make(map[string]string),
+	}
 	for k := range values {
-		if contains(validParams, k) {
-			ret[k] = values.Get(k)
+		if contains(fullMatch, k) {
+			ret.FullMatch[k] = values.Get(k)
+		}
+		if contains(partialMatch, k) {
+			ret.PartialMatch[k] = strings.ToLower(values.Get(k))
 		}
 	}
+
 	return ret
 }
 

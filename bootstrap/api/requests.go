@@ -15,13 +15,19 @@ type apiReq interface {
 
 type addReq struct {
 	key         string
+	ThingID     string   `json:"thing_id"`
 	ExternalID  string   `json:"external_id"`
 	ExternalKey string   `json:"external_key"`
 	Channels    []string `json:"channels"`
+	Name        string   `json:"name"`
 	Content     string   `json:"content"`
 }
 
 func (req addReq) validate() error {
+	if req.key == "" {
+		return bootstrap.ErrUnauthorizedAccess
+	}
+
 	if req.ExternalID == "" || req.ExternalKey == "" {
 		return bootstrap.ErrMalformedEntity
 	}
@@ -39,15 +45,18 @@ func (req entityReq) validate() error {
 		return bootstrap.ErrUnauthorizedAccess
 	}
 
+	if req.id == "" {
+		return bootstrap.ErrMalformedEntity
+	}
+
 	return nil
 }
 
 type updateReq struct {
-	key      string
-	id       string
-	Channels []string        `json:"channels"`
-	Content  string          `json:"content"`
-	State    bootstrap.State `json:"state"`
+	key     string
+	id      string
+	Name    string `json:"name"`
+	Content string `json:"content"`
 }
 
 func (req updateReq) validate() error {
@@ -55,9 +64,25 @@ func (req updateReq) validate() error {
 		return bootstrap.ErrUnauthorizedAccess
 	}
 
-	// Can't explicitly update state to NewThing or Created.
-	if req.State != bootstrap.Inactive &&
-		req.State != bootstrap.Active {
+	if req.id == "" {
+		return bootstrap.ErrMalformedEntity
+	}
+
+	return nil
+}
+
+type updateConnReq struct {
+	key      string
+	id       string
+	Channels []string `json:"channels"`
+}
+
+func (req updateConnReq) validate() error {
+	if req.key == "" {
+		return bootstrap.ErrUnauthorizedAccess
+	}
+
+	if req.id == "" {
 		return bootstrap.ErrMalformedEntity
 	}
 
@@ -74,6 +99,10 @@ type listReq struct {
 func (req listReq) validate() error {
 	if req.key == "" {
 		return bootstrap.ErrUnauthorizedAccess
+	}
+
+	if req.limit == 0 || req.limit > maxLimit {
+		return bootstrap.ErrMalformedEntity
 	}
 
 	return nil
@@ -103,8 +132,12 @@ type changeStateReq struct {
 }
 
 func (req changeStateReq) validate() error {
-	if req.id == "" || req.key == "" {
+	if req.key == "" {
 		return bootstrap.ErrUnauthorizedAccess
+	}
+
+	if req.id == "" {
+		return bootstrap.ErrMalformedEntity
 	}
 
 	if req.State != bootstrap.Inactive &&

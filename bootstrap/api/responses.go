@@ -11,9 +11,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/mainflux/mainflux/bootstrap"
-
 	"github.com/mainflux/mainflux"
+	"github.com/mainflux/mainflux/bootstrap"
 )
 
 var (
@@ -54,7 +53,7 @@ func (res configRes) Code() int {
 func (res configRes) Headers() map[string]string {
 	if res.created {
 		return map[string]string{
-			"Location": fmt.Sprintf("/configs/%s", res.id),
+			"Location": fmt.Sprintf("/things/configs/%s", res.id),
 		}
 	}
 
@@ -65,14 +64,21 @@ func (res configRes) Empty() bool {
 	return true
 }
 
+type channelRes struct {
+	ID       string      `json:"id"`
+	Name     string      `json:"name,omitempty"`
+	Metadata interface{} `json:"metadata,omitempty"`
+}
+
 type viewRes struct {
 	MFThing     string          `json:"mainflux_id,omitempty"`
 	MFKey       string          `json:"mainflux_key,omitempty"`
-	Channels    []string        `json:"channels,omitempty"`
+	Channels    []channelRes    `json:"mainflux_channels,omitempty"`
 	ExternalID  string          `json:"external_id"`
 	ExternalKey string          `json:"external_key,omitempty"`
 	Content     string          `json:"content,omitempty"`
-	State       bootstrap.State `json:"state,omitempty"`
+	Name        string          `json:"name,omitempty"`
+	State       bootstrap.State `json:"state"`
 }
 
 func (res viewRes) Code() int {
@@ -87,7 +93,31 @@ func (res viewRes) Empty() bool {
 	return false
 }
 
+type unknownRes struct {
+	ExternalID  string `json:"external_id"`
+	ExternalKey string `json:"external_key,omitempty"`
+}
+
+type listUnknownRes struct {
+	Configs []unknownRes `json:"configs"`
+}
+
+func (res listUnknownRes) Code() int {
+	return http.StatusOK
+}
+
+func (res listUnknownRes) Headers() map[string]string {
+	return map[string]string{}
+}
+
+func (res listUnknownRes) Empty() bool {
+	return false
+}
+
 type listRes struct {
+	Total   uint64    `json:"total"`
+	Offset  uint64    `json:"offset"`
+	Limit   uint64    `json:"limit"`
 	Configs []viewRes `json:"configs"`
 }
 

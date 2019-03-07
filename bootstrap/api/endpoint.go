@@ -21,10 +21,17 @@ func addEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
+		channels := []bootstrap.Channel{}
+		for _, c := range req.Channels {
+			channels = append(channels, bootstrap.Channel{ID: c})
+		}
+
 		config := bootstrap.Config{
+			MFThing:     req.ThingID,
 			ExternalID:  req.ExternalID,
 			ExternalKey: req.ExternalKey,
-			MFChannels:  req.Channels,
+			MFChannels:  channels,
+			Name:        req.Name,
 			Content:     req.Content,
 		}
 
@@ -55,12 +62,22 @@ func viewEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
+		var channels []channelRes
+		for _, ch := range config.MFChannels {
+			channels = append(channels, channelRes{
+				ID:       ch.ID,
+				Name:     ch.Name,
+				Metadata: ch.Metadata,
+			})
+		}
+
 		res := viewRes{
 			MFThing:     config.MFThing,
 			MFKey:       config.MFKey,
-			Channels:    config.MFChannels,
+			Channels:    channels,
 			ExternalID:  config.ExternalID,
 			ExternalKey: config.ExternalKey,
+			Name:        config.Name,
 			Content:     config.Content,
 			State:       config.State,
 		}
@@ -78,10 +95,9 @@ func updateEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 		}
 
 		config := bootstrap.Config{
-			MFThing:    req.id,
-			MFChannels: req.Channels,
-			Content:    req.Content,
-			State:      req.State,
+			MFThing: req.id,
+			Name:    req.Name,
+			Content: req.Content,
 		}
 
 		if err := svc.Update(req.key, config); err != nil {
@@ -97,6 +113,27 @@ func updateEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 	}
 }
 
+func updateConnEndpoint(svc bootstrap.Service) endpoint.Endpoint {
+	return func(_ context.Context, request interface{}) (interface{}, error) {
+		req := request.(updateConnReq)
+
+		if err := req.validate(); err != nil {
+			return nil, err
+		}
+
+		if err := svc.UpdateConnections(req.key, req.id, req.Channels); err != nil {
+			return nil, err
+		}
+
+		res := configRes{
+			id:      req.id,
+			created: false,
+		}
+
+		return res, nil
+	}
+}
+
 func listEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 	return func(_ context.Context, request interface{}) (interface{}, error) {
 		req := request.(listReq)
@@ -105,29 +142,53 @@ func listEndpoint(svc bootstrap.Service) endpoint.Endpoint {
 			return nil, err
 		}
 
-		configs, err := svc.List(req.key, req.filter, req.offset, req.limit)
+		page, err := svc.List(req.key, req.filter, req.offset, req.limit)
 		if err != nil {
 			return nil, err
 		}
-
-		res := listRes{
-			Configs: []viewRes{},
-		}
-
-		for _, cfg := range configs {
-			view := viewRes{
-				MFThing:     cfg.MFThing,
-				MFKey:       cfg.MFKey,
-				Channels:    cfg.MFChannels,
-				ExternalID:  cfg.ExternalID,
-				ExternalKey: cfg.ExternalKey,
-				Content:     cfg.Content,
-				State:       cfg.State,
+		switch {
+		case req.filter.Unknown:
+			res := listUnknownRes{}
+			for _, cfg := range page.Configs {
+				res.Configs = append(res.Configs, unknownRes{
+					ExternalID:  cfg.ExternalID,
+					ExternalKey: cfg.ExternalKey,
+				})
 			}
-			res.Configs = append(res.Configs, view)
-		}
+			return res, nil
+		default:
+			res := listRes{
+				Total:   page.Total,
+				Offset:  page.Offset,
+				Limit:   page.Limit,
+				Configs: []viewRes{},
+			}
 
-		return res, nil
+			for _, cfg := range page.Configs {
+				var channels []channelRes
+				for _, ch := range cfg.MFChannels {
+					channels = append(channels, channelRes{
+						ID:       ch.ID,
+						Name:     ch.Name,
+						Metadata: ch.Metadata,
+					})
+				}
+
+				view := viewRes{
+					MFThing:     cfg.MFThing,
+					MFKey:       cfg.MFKey,
+					Channels:    channels,
+					ExternalID:  cfg.ExternalID,
+					ExternalKey: cfg.ExternalKey,
+					Name:        cfg.Name,
+					Content:     cfg.Content,
+					State:       cfg.State,
+				}
+				res.Configs = append(res.Configs, view)
+			}
+
+			return res, nil
+		}
 	}
 }
 
