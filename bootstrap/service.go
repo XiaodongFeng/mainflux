@@ -9,17 +9,11 @@ package bootstrap
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
 	"github.com/mainflux/mainflux"
 	mfsdk "github.com/mainflux/mainflux/sdk/go"
-)
-
-const (
-	thingType = "device"
-	chanName  = "channel"
 )
 
 var (
@@ -54,6 +48,10 @@ type Service interface {
 
 	// Update updates editable fields of the provided Config.
 	Update(string, Config) error
+
+	// UpdateCert updates an existing Config certificate and key.
+	// A non-nil error is returned to indicate operation failure.
+	UpdateCert(string, string, string, string, string) error
 
 	// UpdateConnections updates list of Channels related to given Config.
 	UpdateConnections(string, string, []string) error
@@ -118,7 +116,7 @@ func (bs bootstrapService) Add(key string, cfg Config) (Config, error) {
 
 	toConnect := bs.toIDList(cfg.MFChannels)
 
-	// Check if channels exist. This is the way to prevent invalid configuration to be saved.
+	// Check if channels exist. This is the way to prevent fetching channels that already exist.
 	existing, err := bs.configs.ListExisting(owner, toConnect)
 	if err != nil {
 		return Config{}, err
@@ -162,20 +160,7 @@ func (bs bootstrapService) View(key, id string) (Config, error) {
 		return Config{}, err
 	}
 
-	cfg, err := bs.configs.RetrieveByID(owner, id)
-	if err != nil {
-		return Config{}, err
-	}
-
-	for i, ch := range cfg.MFChannels {
-		if meta, ok := ch.Metadata.([]byte); ok {
-			if err := json.Unmarshal(meta, &cfg.MFChannels[i].Metadata); err != nil {
-				return Config{}, err
-			}
-		}
-	}
-
-	return cfg, nil
+	return bs.configs.RetrieveByID(owner, id)
 }
 
 func (bs bootstrapService) Update(key string, cfg Config) error {
@@ -187,6 +172,14 @@ func (bs bootstrapService) Update(key string, cfg Config) error {
 	cfg.Owner = owner
 
 	return bs.configs.Update(cfg)
+}
+
+func (bs bootstrapService) UpdateCert(key, thingKey, clientCert, clientKey, caCert string) error {
+	owner, err := bs.identify(key)
+	if err != nil {
+		return err
+	}
+	return bs.configs.UpdateCert(owner, thingKey, clientCert, clientKey, caCert)
 }
 
 func (bs bootstrapService) UpdateConnections(key, id string, connections []string) error {
@@ -201,7 +194,14 @@ func (bs bootstrapService) UpdateConnections(key, id string, connections []strin
 	}
 
 	add, remove := bs.updateList(cfg, connections)
-	channels, err := bs.updateChannels(add, key)
+
+	// Check if channels exist. This is the way to prevent fetching channels that already exist.
+	existing, err := bs.configs.ListExisting(owner, connections)
+	if err != nil {
+		return err
+	}
+
+	channels, err := bs.connectionChannels(connections, bs.toIDList(existing), key)
 	if err != nil {
 		return err
 	}
@@ -266,14 +266,6 @@ func (bs bootstrapService) Bootstrap(externalKey, externalID string) (Config, er
 		return Config{}, ErrNotFound
 	}
 
-	for i, ch := range cfg.MFChannels {
-		if meta, ok := ch.Metadata.([]byte); ok {
-			if err := json.Unmarshal(meta, &cfg.MFChannels[i].Metadata); err != nil {
-				return Config{}, err
-			}
-		}
-	}
-
 	return cfg, nil
 }
 
@@ -283,25 +275,25 @@ func (bs bootstrapService) ChangeState(key, id string, state State) error {
 		return err
 	}
 
-	thing, err := bs.configs.RetrieveByID(owner, id)
+	cfg, err := bs.configs.RetrieveByID(owner, id)
 	if err != nil {
 		return err
 	}
 
-	if thing.State == state {
+	if cfg.State == state {
 		return nil
 	}
 
 	switch state {
 	case Active:
-		for _, c := range thing.MFChannels {
-			if err := bs.sdk.ConnectThing(thing.MFThing, c.ID, key); err != nil {
+		for _, c := range cfg.MFChannels {
+			if err := bs.sdk.ConnectThing(cfg.MFThing, c.ID, key); err != nil {
 				return ErrThings
 			}
 		}
 	case Inactive:
-		for _, c := range thing.MFChannels {
-			if err := bs.sdk.DisconnectThing(thing.MFThing, c.ID, key); err != nil {
+		for _, c := range cfg.MFChannels {
+			if err := bs.sdk.DisconnectThing(cfg.MFThing, c.ID, key); err != nil {
 				if err == mfsdk.ErrNotFound {
 					continue
 				}
@@ -347,7 +339,7 @@ func (bs bootstrapService) thing(key, id string) (mfsdk.Thing, error) {
 	var err error
 
 	if id == "" {
-		thingID, err = bs.sdk.CreateThing(mfsdk.Thing{Type: thingType}, key)
+		thingID, err = bs.sdk.CreateThing(mfsdk.Thing{}, key)
 		if err != nil {
 			return mfsdk.Thing{}, err
 		}
@@ -367,6 +359,35 @@ func (bs bootstrapService) thing(key, id string) (mfsdk.Thing, error) {
 	}
 
 	return thing, nil
+}
+
+func (bs bootstrapService) connectionChannels(channels, existing []string, key string) ([]Channel, error) {
+	add := make(map[string]bool, len(channels))
+	for _, ch := range channels {
+		add[ch] = true
+	}
+
+	for _, ch := range existing {
+		if add[ch] == true {
+			delete(add, ch)
+		}
+	}
+
+	var ret []Channel
+	for id := range add {
+		ch, err := bs.sdk.Channel(id, key)
+		if err != nil {
+			return nil, ErrMalformedEntity
+		}
+
+		ret = append(ret, Channel{
+			ID:       ch.ID,
+			Name:     ch.Name,
+			Metadata: ch.Metadata,
+		})
+	}
+
+	return ret, nil
 }
 
 // Method updateList accepts config and channel IDs and returns three lists:
@@ -404,51 +425,4 @@ func (bs bootstrapService) toIDList(channels []Channel) []string {
 	}
 
 	return ret
-}
-
-func (bs bootstrapService) updateChannels(add []string, key string) ([]Channel, error) {
-	var ret []Channel
-	for _, id := range add {
-		ch, err := bs.sdk.Channel(id, key)
-		if err != nil {
-			return []Channel{}, ErrMalformedEntity
-		}
-
-		ret = append(ret, Channel{
-			ID:       ch.ID,
-			Name:     ch.Name,
-			Metadata: ch.Metadata,
-		})
-	}
-
-	return ret, nil
-}
-
-func (bs bootstrapService) connectionChannels(channels, existing []string, key string) ([]Channel, error) {
-	add := make(map[string]bool, len(channels))
-	for _, ch := range channels {
-		add[ch] = true
-	}
-
-	for _, ch := range existing {
-		if add[ch] == true {
-			delete(add, ch)
-		}
-	}
-
-	var ret []Channel
-	for id := range add {
-		ch, err := bs.sdk.Channel(id, key)
-		if err != nil {
-			return nil, ErrMalformedEntity
-		}
-
-		ret = append(ret, Channel{
-			ID:       ch.ID,
-			Name:     ch.Name,
-			Metadata: ch.Metadata,
-		})
-	}
-
-	return ret, nil
 }

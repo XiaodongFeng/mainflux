@@ -26,6 +26,9 @@ var (
 
 	// ErrNotFound indicates a non-existent entity request.
 	ErrNotFound = errors.New("non-existent entity")
+
+	// ErrConflict indicates that entity already exists.
+	ErrConflict = errors.New("entity already exists")
 )
 
 // Service specifies an API that must be fullfiled by the domain service
@@ -37,6 +40,10 @@ type Service interface {
 	// UpdateThing updates the thing identified by the provided ID, that
 	// belongs to the user identified by the provided key.
 	UpdateThing(string, Thing) error
+
+	// UpdateKey updates key value of the existing thing. A non-nil error is
+	// returned to indicate operation failure.
+	UpdateKey(string, string, string) error
 
 	// ViewThing retrieves data about the thing identified with the provided
 	// ID, that belongs to the user identified by the provided key.
@@ -124,7 +131,7 @@ func New(users mainflux.UsersServiceClient, things ThingRepository, channels Cha
 	}
 }
 
-func (ts *thingsService) AddThing(key string, thing Thing) (Thing, error) {
+func (ts *thingsService) AddThing(token string, thing Thing) (Thing, error) {
 	if err := thing.Validate(); err != nil {
 		return Thing{}, ErrMalformedEntity
 	}
@@ -132,14 +139,24 @@ func (ts *thingsService) AddThing(key string, thing Thing) (Thing, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Thing{}, ErrUnauthorizedAccess
 	}
 
-	thing.ID = ts.idp.ID()
+	thing.ID, err = ts.idp.ID()
+	if err != nil {
+		return Thing{}, err
+	}
+
 	thing.Owner = res.GetValue()
-	thing.Key = ts.idp.ID()
+
+	if thing.Key == "" {
+		thing.Key, err = ts.idp.ID()
+		if err != nil {
+			return Thing{}, err
+		}
+	}
 
 	id, err := ts.things.Save(thing)
 	if err != nil {
@@ -150,7 +167,7 @@ func (ts *thingsService) AddThing(key string, thing Thing) (Thing, error) {
 	return thing, nil
 }
 
-func (ts *thingsService) UpdateThing(key string, thing Thing) error {
+func (ts *thingsService) UpdateThing(token string, thing Thing) error {
 	if err := thing.Validate(); err != nil {
 		return ErrMalformedEntity
 	}
@@ -158,7 +175,7 @@ func (ts *thingsService) UpdateThing(key string, thing Thing) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
@@ -168,11 +185,26 @@ func (ts *thingsService) UpdateThing(key string, thing Thing) error {
 	return ts.things.Update(thing)
 }
 
-func (ts *thingsService) ViewThing(key, id string) (Thing, error) {
+func (ts *thingsService) UpdateKey(token, id, key string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
+	if err != nil {
+		return ErrUnauthorizedAccess
+	}
+
+	owner := res.GetValue()
+
+	return ts.things.UpdateKey(owner, id, key)
+
+}
+
+func (ts *thingsService) ViewThing(token, id string) (Thing, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Thing{}, ErrUnauthorizedAccess
 	}
@@ -180,35 +212,35 @@ func (ts *thingsService) ViewThing(key, id string) (Thing, error) {
 	return ts.things.RetrieveByID(res.GetValue(), id)
 }
 
-func (ts *thingsService) ListThings(key string, offset, limit uint64) (ThingsPage, error) {
+func (ts *thingsService) ListThings(token string, offset, limit uint64) (ThingsPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ThingsPage{}, ErrUnauthorizedAccess
 	}
 
-	return ts.things.RetrieveAll(res.GetValue(), offset, limit), nil
+	return ts.things.RetrieveAll(res.GetValue(), offset, limit)
 }
 
-func (ts *thingsService) ListThingsByChannel(key, channel string, offset, limit uint64) (ThingsPage, error) {
+func (ts *thingsService) ListThingsByChannel(token, channel string, offset, limit uint64) (ThingsPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ThingsPage{}, ErrUnauthorizedAccess
 	}
 
-	return ts.things.RetrieveByChannel(res.GetValue(), channel, offset, limit), nil
+	return ts.things.RetrieveByChannel(res.GetValue(), channel, offset, limit)
 }
 
-func (ts *thingsService) RemoveThing(key string, id string) error {
+func (ts *thingsService) RemoveThing(token, id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
@@ -217,16 +249,20 @@ func (ts *thingsService) RemoveThing(key string, id string) error {
 	return ts.things.Remove(res.GetValue(), id)
 }
 
-func (ts *thingsService) CreateChannel(key string, channel Channel) (Channel, error) {
+func (ts *thingsService) CreateChannel(token string, channel Channel) (Channel, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Channel{}, ErrUnauthorizedAccess
 	}
 
-	channel.ID = ts.idp.ID()
+	channel.ID, err = ts.idp.ID()
+	if err != nil {
+		return Channel{}, err
+	}
+
 	channel.Owner = res.GetValue()
 
 	id, err := ts.channels.Save(channel)
@@ -238,11 +274,11 @@ func (ts *thingsService) CreateChannel(key string, channel Channel) (Channel, er
 	return channel, nil
 }
 
-func (ts *thingsService) UpdateChannel(key string, channel Channel) error {
+func (ts *thingsService) UpdateChannel(token string, channel Channel) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
@@ -251,11 +287,11 @@ func (ts *thingsService) UpdateChannel(key string, channel Channel) error {
 	return ts.channels.Update(channel)
 }
 
-func (ts *thingsService) ViewChannel(key, id string) (Channel, error) {
+func (ts *thingsService) ViewChannel(token, id string) (Channel, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return Channel{}, ErrUnauthorizedAccess
 	}
@@ -263,35 +299,35 @@ func (ts *thingsService) ViewChannel(key, id string) (Channel, error) {
 	return ts.channels.RetrieveByID(res.GetValue(), id)
 }
 
-func (ts *thingsService) ListChannels(key string, offset, limit uint64) (ChannelsPage, error) {
+func (ts *thingsService) ListChannels(token string, offset, limit uint64) (ChannelsPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ChannelsPage{}, ErrUnauthorizedAccess
 	}
 
-	return ts.channels.RetrieveAll(res.GetValue(), offset, limit), nil
+	return ts.channels.RetrieveAll(res.GetValue(), offset, limit)
 }
 
-func (ts *thingsService) ListChannelsByThing(key, thing string, offset, limit uint64) (ChannelsPage, error) {
+func (ts *thingsService) ListChannelsByThing(token, thing string, offset, limit uint64) (ChannelsPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ChannelsPage{}, ErrUnauthorizedAccess
 	}
 
-	return ts.channels.RetrieveByThing(res.GetValue(), thing, offset, limit), nil
+	return ts.channels.RetrieveByThing(res.GetValue(), thing, offset, limit)
 }
 
-func (ts *thingsService) RemoveChannel(key, id string) error {
+func (ts *thingsService) RemoveChannel(token, id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
@@ -300,11 +336,11 @@ func (ts *thingsService) RemoveChannel(key, id string) error {
 	return ts.channels.Remove(res.GetValue(), id)
 }
 
-func (ts *thingsService) Connect(key, chanID, thingID string) error {
+func (ts *thingsService) Connect(token, chanID, thingID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}
@@ -312,11 +348,11 @@ func (ts *thingsService) Connect(key, chanID, thingID string) error {
 	return ts.channels.Connect(res.GetValue(), chanID, thingID)
 }
 
-func (ts *thingsService) Disconnect(key, chanID, thingID string) error {
+func (ts *thingsService) Disconnect(token, chanID, thingID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: key})
+	res, err := ts.users.Identify(ctx, &mainflux.Token{Value: token})
 	if err != nil {
 		return ErrUnauthorizedAccess
 	}

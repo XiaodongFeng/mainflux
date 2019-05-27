@@ -65,25 +65,20 @@ func TestAddThing(t *testing.T) {
 		event map[string]interface{}
 	}{
 		{
-			desc:  "create thing successfully",
-			thing: things.Thing{Type: "app", Name: "a", Metadata: "metadata"},
-			key:   token,
-			err:   nil,
+			desc: "create thing successfully",
+			thing: things.Thing{
+				Name:     "a",
+				Metadata: map[string]interface{}{"test": "test"},
+			},
+			key: token,
+			err: nil,
 			event: map[string]interface{}{
 				"id":        "1",
 				"name":      "a",
 				"owner":     email,
-				"type":      "app",
-				"metadata":  "metadata",
+				"metadata":  "{\"test\":\"test\"}",
 				"operation": thingCreate,
 			},
-		},
-		{
-			desc:  "create invalid thing",
-			thing: things.Thing{Type: "a", Name: "a"},
-			key:   token,
-			err:   things.ErrMalformedEntity,
-			event: nil,
 		},
 	}
 
@@ -114,7 +109,8 @@ func TestUpdateThing(t *testing.T) {
 
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	sth, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a", Metadata: "metadata"})
+	th := things.Thing{Name: "a", Metadata: map[string]interface{}{"test": "test"}}
+	sth, err := svc.AddThing(token, th)
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 
 	svc = redis.NewEventStoreMiddleware(svc, redisClient)
@@ -127,28 +123,20 @@ func TestUpdateThing(t *testing.T) {
 		event map[string]interface{}
 	}{
 		{
-			desc:  "update existing thing successfully",
-			thing: things.Thing{ID: sth.ID, Type: "app", Name: "a", Metadata: "metadata1"},
-			key:   token,
-			err:   nil,
+			desc: "update existing thing successfully",
+			thing: things.Thing{
+				ID:       sth.ID,
+				Name:     "a",
+				Metadata: map[string]interface{}{"test": "test"},
+			},
+			key: token,
+			err: nil,
 			event: map[string]interface{}{
 				"id":        sth.ID,
 				"name":      "a",
-				"type":      "app",
-				"metadata":  "metadata1",
+				"metadata":  "{\"test\":\"test\"}",
 				"operation": thingUpdate,
 			},
-		},
-		{
-			desc: "update invalid thing",
-			thing: things.Thing{
-				ID:   strconv.FormatUint(math.MaxUint64, 10),
-				Type: "a",
-				Name: "a",
-			},
-			key:   token,
-			err:   things.ErrMalformedEntity,
-			event: nil,
 		},
 	}
 
@@ -175,9 +163,11 @@ func TestUpdateThing(t *testing.T) {
 }
 
 func TestViewThing(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	sth, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 
 	essvc := redis.NewEventStoreMiddleware(svc, redisClient)
@@ -188,9 +178,11 @@ func TestViewThing(t *testing.T) {
 }
 
 func TestListThings(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	_, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a"})
+	_, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 
 	essvc := redis.NewEventStoreMiddleware(svc, redisClient)
@@ -201,9 +193,11 @@ func TestListThings(t *testing.T) {
 }
 
 func TestListThingsByChannel(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	sth, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 	sch, err := svc.CreateChannel(token, things.Channel{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
@@ -222,7 +216,7 @@ func TestRemoveThing(t *testing.T) {
 
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	sth, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 
 	svc = redis.NewEventStoreMiddleware(svc, redisClient)
@@ -290,20 +284,20 @@ func TestCreateChannel(t *testing.T) {
 	}{
 		{
 			desc:    "create channel successfully",
-			channel: things.Channel{Name: "a", Metadata: "metadata"},
+			channel: things.Channel{Name: "a", Metadata: map[string]interface{}{"test": "test"}},
 			key:     token,
 			err:     nil,
 			event: map[string]interface{}{
 				"id":        "1",
 				"name":      "a",
-				"metadata":  "metadata",
+				"metadata":  "{\"test\":\"test\"}",
 				"owner":     email,
 				"operation": channelCreate,
 			},
 		},
 		{
 			desc:    "create channel with invalid credentials",
-			channel: things.Channel{Name: "a", Metadata: "metadata"},
+			channel: things.Channel{Name: "a", Metadata: map[string]interface{}{"test": "test"}},
 			key:     "",
 			err:     things.ErrUnauthorizedAccess,
 			event:   nil,
@@ -350,14 +344,18 @@ func TestUpdateChannel(t *testing.T) {
 		event   map[string]interface{}
 	}{
 		{
-			desc:    "update channel successfully",
-			channel: things.Channel{ID: sch.ID, Name: "b", Metadata: "metadata"},
-			key:     token,
-			err:     nil,
+			desc: "update channel successfully",
+			channel: things.Channel{
+				ID:       sch.ID,
+				Name:     "b",
+				Metadata: map[string]interface{}{"test": "test"},
+			},
+			key: token,
+			err: nil,
 			event: map[string]interface{}{
 				"id":        sch.ID,
 				"name":      "b",
-				"metadata":  "metadata",
+				"metadata":  "{\"test\":\"test\"}",
 				"operation": channelUpdate,
 			},
 		},
@@ -396,6 +394,8 @@ func TestUpdateChannel(t *testing.T) {
 }
 
 func TestViewChannel(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create channel without sending event.
 	sch, err := svc.CreateChannel(token, things.Channel{Name: "a"})
@@ -409,6 +409,8 @@ func TestViewChannel(t *testing.T) {
 }
 
 func TestListChannels(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
 	_, err := svc.CreateChannel(token, things.Channel{Name: "a"})
@@ -422,9 +424,11 @@ func TestListChannels(t *testing.T) {
 }
 
 func TestListChannelsByThing(t *testing.T) {
+	redisClient.FlushAll().Err()
+
 	svc := newService(map[string]string{token: email})
 	// Create thing without sending event.
-	sth, err := svc.AddThing(token, things.Thing{Type: "app", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 	sch, err := svc.CreateChannel(token, things.Channel{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
@@ -501,7 +505,7 @@ func TestConnectEvent(t *testing.T) {
 
 	svc := newService(map[string]string{token: email})
 	// Create thing and channel that will be connected.
-	sth, err := svc.AddThing(token, things.Thing{Type: "device", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 	sch, err := svc.CreateChannel(token, things.Channel{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
@@ -565,7 +569,7 @@ func TestDisconnectEvent(t *testing.T) {
 
 	svc := newService(map[string]string{token: email})
 	// Create thing and channel that will be connected.
-	sth, err := svc.AddThing(token, things.Thing{Type: "device", Name: "a"})
+	sth, err := svc.AddThing(token, things.Thing{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))
 	sch, err := svc.CreateChannel(token, things.Channel{Name: "a"})
 	require.Nil(t, err, fmt.Sprintf("unexpected error %s", err))

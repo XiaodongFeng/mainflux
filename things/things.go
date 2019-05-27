@@ -7,17 +7,14 @@
 
 package things
 
-import "strings"
-
 // Thing represents a Mainflux thing. Each thing is owned by one user, and
 // it is assigned with the unique identifier and (temporary) access key.
 type Thing struct {
 	ID       string
 	Owner    string
-	Type     string
 	Name     string
 	Key      string
-	Metadata string
+	Metadata map[string]interface{}
 }
 
 // ThingsPage contains page related metadata as well as list of things that
@@ -27,17 +24,8 @@ type ThingsPage struct {
 	Things []Thing
 }
 
-var thingTypes = map[string]bool{
-	"app":    true,
-	"device": true,
-}
-
 // Validate returns an error if thing representation is invalid.
 func (c *Thing) Validate() error {
-	if c.Type = strings.ToLower(c.Type); !thingTypes[c.Type] {
-		return ErrMalformedEntity
-	}
-
 	return nil
 }
 
@@ -51,6 +39,10 @@ type ThingRepository interface {
 	// returned to indicate operation failure.
 	Update(Thing) error
 
+	// UpdateKey updates key value of the existing thing. A non-nil error is
+	// returned to indicate operation failure.
+	UpdateKey(string, string, string) error
+
 	// RetrieveByID retrieves the thing having the provided identifier, that is owned
 	// by the specified user.
 	RetrieveByID(string, string) (Thing, error)
@@ -59,11 +51,11 @@ type ThingRepository interface {
 	RetrieveByKey(string) (string, error)
 
 	// RetrieveAll retrieves the subset of things owned by the specified user.
-	RetrieveAll(string, uint64, uint64) ThingsPage
+	RetrieveAll(string, uint64, uint64) (ThingsPage, error)
 
 	// RetrieveByChannel retrieves the subset of things owned by the specified
 	// user and connected to specified channel.
-	RetrieveByChannel(string, string, uint64, uint64) ThingsPage
+	RetrieveByChannel(string, string, uint64, uint64) (ThingsPage, error)
 
 	// Remove removes the thing having the provided identifier, that is owned
 	// by the specified user.

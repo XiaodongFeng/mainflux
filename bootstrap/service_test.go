@@ -13,13 +13,13 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/gofrs/uuid"
 	"github.com/mainflux/mainflux"
 	"github.com/mainflux/mainflux/bootstrap"
 	"github.com/mainflux/mainflux/bootstrap/mocks"
 	mfsdk "github.com/mainflux/mainflux/sdk/go"
 	"github.com/mainflux/mainflux/things"
 	httpapi "github.com/mainflux/mainflux/things/api/http"
-	uuid "github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -38,7 +38,7 @@ var (
 	channel = bootstrap.Channel{
 		ID:       "1",
 		Name:     "name",
-		Metadata: `{"name":"value"}`,
+		Metadata: map[string]interface{}{"name": "value"},
 	}
 
 	config = bootstrap.Config{
@@ -66,7 +66,7 @@ func newThingsService(users mainflux.UsersServiceClient) things.Service {
 		channels[id] = things.Channel{
 			ID:       id,
 			Owner:    email,
-			Metadata: `{"meta":"data"}`,
+			Metadata: map[string]interface{}{"meta": "data"},
 		}
 	}
 
@@ -223,6 +223,64 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+func TestUpdateCert(t *testing.T) {
+	users := mocks.NewUsersService(map[string]string{validToken: email})
+
+	server := newThingsServer(newThingsService(users))
+	svc := newService(users, server.URL)
+	c := config
+
+	ch := channel
+	ch.ID = "2"
+	c.MFChannels = append(c.MFChannels, ch)
+	saved, err := svc.Add(validToken, c)
+	require.Nil(t, err, fmt.Sprintf("Saving config expected to succeed: %s.\n", err))
+
+	cases := []struct {
+		desc       string
+		key        string
+		thingKey   string
+		clientCert string
+		clientKey  string
+		caCert     string
+		err        error
+	}{
+		{
+			desc:       "update certs for the valid config",
+			thingKey:   saved.MFKey,
+			clientCert: "newCert",
+			clientKey:  "newKey",
+			caCert:     "newCert",
+			key:        validToken,
+			err:        nil,
+		},
+		{
+			desc:       "update cert for a non-existing config",
+			thingKey:   "empty",
+			clientCert: "newCert",
+			clientKey:  "newKey",
+			caCert:     "newCert",
+
+			key: validToken,
+			err: bootstrap.ErrNotFound,
+		},
+		{
+			desc:       "update config cert with wrong credentials",
+			thingKey:   saved.MFKey,
+			clientCert: "newCert",
+			clientKey:  "newKey",
+			caCert:     "newCert",
+			key:        invalidToken,
+			err:        bootstrap.ErrUnauthorizedAccess,
+		},
+	}
+
+	for _, tc := range cases {
+		err := svc.UpdateCert(tc.key, tc.thingKey, tc.clientCert, tc.clientKey, tc.caCert)
+		assert.Equal(t, tc.err, err, fmt.Sprintf("%s: expected %s got %s\n", tc.desc, tc.err, err))
+	}
+}
+
 func TestUpdateConnections(t *testing.T) {
 	users := mocks.NewUsersService(map[string]string{validToken: email})
 
@@ -236,7 +294,9 @@ func TestUpdateConnections(t *testing.T) {
 	created, err := svc.Add(validToken, c)
 	require.Nil(t, err, fmt.Sprintf("Saving config expected to succeed: %s.\n", err))
 
-	c.ExternalID = uuid.NewV4().String()
+	externalID, err := uuid.NewV4()
+	require.Nil(t, err, fmt.Sprintf("Got unexpected error: %s.\n", err))
+	c.ExternalID = externalID.String()
 	active, err := svc.Add(validToken, c)
 	require.Nil(t, err, fmt.Sprintf("Saving config expected to succeed: %s.\n", err))
 	err = svc.ChangeState(validToken, active.MFThing, bootstrap.Active)
@@ -253,7 +313,7 @@ func TestUpdateConnections(t *testing.T) {
 		err         error
 	}{
 		{
-			desc:        "update connections for config with state Created",
+			desc:        "update connections for config with state Inactive",
 			key:         validToken,
 			id:          created.MFThing,
 			connections: []string{"2"},
@@ -305,9 +365,10 @@ func TestList(t *testing.T) {
 	var saved []bootstrap.Config
 	for i := 0; i < numThings; i++ {
 		c := config
-		id := uuid.NewV4().String()
-		c.ExternalID = id
-		c.ExternalKey = id
+		id, err := uuid.NewV4()
+		require.Nil(t, err, fmt.Sprintf("Got unexpected error: %s.\n", err))
+		c.ExternalID = id.String()
+		c.ExternalKey = id.String()
 		c.Name = fmt.Sprintf("%s-%d", config.Name, i)
 		s, err := svc.Add(validToken, c)
 		saved = append(saved, s)
@@ -584,7 +645,7 @@ func TestUpdateChannelHandler(t *testing.T) {
 	ch := bootstrap.Channel{
 		ID:       channel.ID,
 		Name:     "new name",
-		Metadata: "new meta",
+		Metadata: map[string]interface{}{"meta": "new"},
 	}
 
 	cases := []struct {

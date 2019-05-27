@@ -12,9 +12,9 @@ import (
 
 	"github.com/mainflux/mainflux"
 	"github.com/mainflux/mainflux/readers"
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/findopt"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const collection = "mainflux"
@@ -45,19 +45,21 @@ type message struct {
 
 // New returns new MongoDB reader.
 func New(db *mongo.Database) readers.MessageRepository {
-	return mongoRepository{db: db}
+	return mongoRepository{
+		db: db,
+	}
 }
 
-func (repo mongoRepository) ReadAll(chanID string, offset, limit uint64, query map[string]string) []mainflux.Message {
+func (repo mongoRepository) ReadAll(chanID string, offset, limit uint64, query map[string]string) (readers.MessagesPage, error) {
 	col := repo.db.Collection(collection)
 	sortMap := map[string]interface{}{
 		"time": -1,
 	}
 
 	filter := fmtCondition(chanID, query)
-	cursor, err := col.Find(context.Background(), filter, findopt.Sort(sortMap), findopt.Limit(int64(limit)), findopt.Skip(int64(offset)))
+	cursor, err := col.Find(context.Background(), filter, options.Find().SetSort(sortMap).SetLimit(int64(limit)).SetSkip(int64(offset)))
 	if err != nil {
-		return []mainflux.Message{}
+		return readers.MessagesPage{}, err
 	}
 	defer cursor.Close(context.Background())
 
@@ -65,7 +67,7 @@ func (repo mongoRepository) ReadAll(chanID string, offset, limit uint64, query m
 	for cursor.Next(context.Background()) {
 		var m message
 		if err := cursor.Decode(&m); err != nil {
-			return []mainflux.Message{}
+			return readers.MessagesPage{}, err
 		}
 
 		msg := mainflux.Message{
@@ -98,11 +100,29 @@ func (repo mongoRepository) ReadAll(chanID string, offset, limit uint64, query m
 		messages = append(messages, msg)
 	}
 
-	return messages
+	total, err := col.CountDocuments(context.Background(), filter)
+	if err != nil {
+		return readers.MessagesPage{}, err
+	}
+	if total < 0 {
+		return readers.MessagesPage{}, nil
+	}
+
+	return readers.MessagesPage{
+		Total:    uint64(total),
+		Offset:   offset,
+		Limit:    limit,
+		Messages: messages,
+	}, nil
 }
 
-func fmtCondition(chanID string, query map[string]string) *bson.Document {
-	filter := bson.NewDocument(bson.EC.String("channel", chanID))
+func fmtCondition(chanID string, query map[string]string) *bson.D {
+	filter := bson.D{
+		bson.E{
+			Key:   "channel",
+			Value: chanID,
+		},
+	}
 	for name, value := range query {
 		switch name {
 		case
@@ -111,8 +131,9 @@ func fmtCondition(chanID string, query map[string]string) *bson.Document {
 			"publisher",
 			"name",
 			"protocol":
-			filter.Append(bson.EC.String(name, value))
+			filter = append(filter, bson.E{Key: name, Value: value})
 		}
 	}
-	return filter
+
+	return &filter
 }

@@ -4,7 +4,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 
-module Main exposing (Model, Msg(..), init, main, subscriptions, update, view)
+port module Main exposing (Model, Msg(..), init, main, subscriptions, update, view)
 
 import Bootstrap.Button as Button
 import Bootstrap.ButtonGroup as ButtonGroup
@@ -29,7 +29,7 @@ import Channel
 import Connection
 import Debug exposing (log)
 import Error
-import Helpers exposing (fontAwesome)
+import Helpers exposing (faIcons, fontAwesome)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -279,8 +279,8 @@ updateMessage model msg =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ Sub.map ThingMsg (Thing.subscriptions model.thing)
-        , Sub.map UserMsg (User.subscriptions model.user)
+        [ Sub.map UserMsg (User.subscriptions model.user)
+        , Sub.map MessageMsg (Message.subscriptions model.message)
         ]
 
 
@@ -299,7 +299,7 @@ mfStylesheet =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = "Gateflux"
+    { title = "Mainflux"
     , body =
         let
             buttonAttrs =
@@ -310,11 +310,13 @@ view model =
 
             menu =
                 if loggedIn then
-                    [ ButtonGroup.linkButton [ Button.primary, Button.onClick Version, buttonAttrs ] [ i [ class "fas fa-chart-bar" ] [], text " Dashboard" ]
-                    , ButtonGroup.linkButton [ Button.primary, Button.onClick Things, buttonAttrs ] [ i [ class "fas fa-sitemap" ] [], text " Things" ]
-                    , ButtonGroup.linkButton [ Button.primary, Button.onClick Channels, buttonAttrs ] [ i [ class "fas fa-broadcast-tower" ] [], text " Channels" ]
-                    , ButtonGroup.linkButton [ Button.primary, Button.onClick Connection, buttonAttrs ] [ i [ class "fas fa-plug" ] [], text " Connection" ]
-                    , ButtonGroup.linkButton [ Button.primary, Button.onClick Messages, buttonAttrs ] [ i [ class "far fa-paper-plane" ] [], text " Messages" ]
+                    [ ul [ class "nav-pills flex-column nav" ]
+                        [ menuItem "Dashboard" Version faIcons.dashboard (model.view == "dashboard")
+                        , menuItem "Things" Things faIcons.things (model.view == "things")
+                        , menuItem "Channels" Channels faIcons.channels (model.view == "channels")
+                        , menuItem "Connection" Connection faIcons.connection (model.view == "connection")
+                        , menuItem "Messages" Messages faIcons.messages (model.view == "messages")
+                        ]
                     ]
 
                 else
@@ -370,13 +372,8 @@ view model =
                         ]
                     , Grid.row []
                         [ Grid.col
-                            [ Col.attrs [] ]
-                            [ ButtonGroup.linkButtonGroup
-                                [ ButtonGroup.vertical
-                                , ButtonGroup.attrs [ style "width" "100%" ]
-                                ]
-                                menu
-                            ]
+                            []
+                            menu
                         ]
                     ]
                 , Grid.col
@@ -410,28 +407,27 @@ dashboard model =
 
 cardList : Model -> List (Card.Config Msg)
 cardList model =
-    [ Card.config
-        [ Card.secondary
-        , Card.textColor Text.white
-        ]
-        |> Card.headerH3 [] [ text "Version" ]
+    [ Card.config []
+        |> Card.headerH3 [] [ div [ class "table_header" ] [ i [ style "margin-right" "15px", class faIcons.version ] [], text "Version" ] ]
         |> Card.block []
             [ Block.titleH4 [] [ text model.dashboard.version ] ]
-    , Card.config
-        [ Card.info
-        , Card.textColor Text.white
-        ]
-        |> Card.headerH3 [] [ text "Things" ]
+    , Card.config []
+        |> Card.headerH3 [] [ div [ class "table_header" ] [ i [ style "margin-right" "15px", class faIcons.things ] [], text "Things" ] ]
         |> Card.block []
             [ Block.titleH4 [] [ text (String.fromInt model.thing.things.total) ]
             , Block.custom <|
-                Button.button [ Button.light, Button.onClick Things ] [ text "Manage things" ]
+                Button.button [ Button.secondary, Button.onClick Things ] [ text "Manage things" ]
             ]
     , Card.config []
-        |> Card.headerH3 [] [ text "Channels" ]
+        |> Card.headerH3 [] [ div [ class "table_header" ] [ i [ style "margin-right" "15px", class faIcons.channels ] [], text "Channels" ] ]
         |> Card.block []
             [ Block.titleH4 [] [ text (String.fromInt model.channel.channels.total) ]
             , Block.custom <|
-                Button.button [ Button.dark, Button.onClick Channels ] [ text "Manage channels" ]
+                Button.button [ Button.secondary, Button.onClick Channels ] [ text "Manage channels" ]
             ]
     ]
+
+
+menuItem : String -> Msg -> String -> Bool -> Html Msg
+menuItem name msg icon active =
+    li [ class "nav-item", class "text-left" ] [ a [ onClick msg, classList [ ( "nav-link", True ), ( "active", active ) ] ] [ i [ class icon ] [], text name ] ]

@@ -3,9 +3,24 @@ Dashboard made with [elm-bootstrap](http://elm-bootstrap.info/).
 
 ## Install
 
-### Install GUI as a part of Mainflux build
+### Docker container GUI build
 
-Install Elm (https://guide.elm-lang.org/install.html) and then
+Install [Docker](https://docs.docker.com/install/) and [Docker
+compose](https://docs.docker.com/compose/install/), `cd` to Mainflux root
+directory and then
+
+`docker-compose -f docker/docker-compose.yml up`
+
+if you want to launch a whole Mainflux docker composition, or just
+
+`docker-compose -f docker/docker-compose.yml up ui`
+
+if you want to launch just GUI.
+
+### Native GUI build
+
+Install [Elm](https://guide.elm-lang.org/install.html) and then run the
+following commands:
 
 ```
 git clone https://github.com/mainflux/mainflux
@@ -13,48 +28,30 @@ cd mainflux/ui
 make
 ```
 
-This will produce `index.html` in the _ui_ directory. In order to use it, `cd`
-to _ui_ and do
+This will produce `index.html` in the _ui_ directory. Still in the _mainflux/ui_
+folder, enter
 
 `make run`
 
-### Build a standalone native GUI
+and follow the instructions on screen.
 
-Install Elm (https://guide.elm-lang.org/install.html), `cd` to _ui_ and then
+**NB:** `make` does `elm make src/Main.elm --output=main.js` and `make run` executes `elm
+reactor`. Cf. _Makefile_ for more options.
 
-`elm make --optimize src/Main.elm`
+## Configuration
 
-This will produce `index.html` in the _ui_ directory. In order to use it do
+Open the _src/Env.elm_ file and edit the values of the `env` record.
 
-`make run`
+## Contribute to the GUI development
 
-### About Elm `make`
+Follow the instructions above to install and run GUI as a native build. In
+_src/Env.elm_ change a `url` field value of the `elm` record to
+`http://localhost:80/` (trailing slash `/` is mandatory). Instead of `make run`
+you can install [elm-live](https://github.com/wking-io/elm-live) and execute
+`elm-live src/Main.elm -- --output=main.js` to get a live reload when your `.Elm` files change.
 
-`make` does `elm make src/Main.elm`.
-
-`make run` just executes `elm reactor`. You can execute `elm reactor` in other
-terminal window and keep it running, and then see changes as you change-compile
-in the first window. You can even use something as
-[entr](http://eradman.com/entrproject/) to have your source compiled
-automatically when you change and save some files.
-
-### Build as a part of Docker composition
-
-Install Docker (https://docs.docker.com/install/) and Docker compose
-(https://docs.docker.com/compose/install/), `cd` to Mainflux root directory and
-then
-
-`docker-compose -f docker/docker-compose.yml up`
-
-if you want to launch a whole Mainflux docker composition or just
-
-`docker-compose -f docker/docker-compose.yml up ui`
-
-if you want to launch just GUI.
-
-### Contribute to the GUI development
-
-Install GUI as a part of Mainflux build or as a standalone native GUI and run
-it. Launch Mainflux without ui service, either natively or as a Docker
-composition. Follow the guidelines for Mainflux contributors found here
-https://mainflux.readthedocs.io/en/latest/CONTRIBUTING/.
+Launch Mainflux without ui service, either natively or as a Docker composition.
+If you have already launched Mainflux as a Docker composition, simply `cd` to
+Mainflux folder and run `docker-compose -f docker/docker-compose.yml stop ui`.
+Please follow the [guidelines for Mainflux
+contributors](https://mainflux.readthedocs.io/en/latest/CONTRIBUTING/).

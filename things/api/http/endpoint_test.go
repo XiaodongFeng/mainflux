@@ -35,8 +35,8 @@ const (
 )
 
 var (
-	thing   = things.Thing{Type: "app", Name: "test_app", Metadata: "test_metadata"}
-	channel = things.Channel{Name: "test", Metadata: "test_metadata"}
+	thing   = things.Thing{Name: "test_app", Metadata: map[string]interface{}{"test": "data"}}
+	channel = things.Channel{Name: "test", Metadata: map[string]interface{}{"test": "data"}}
 )
 
 type testRequest struct {
@@ -89,8 +89,9 @@ func TestAddThing(t *testing.T) {
 	ts := newServer(svc)
 	defer ts.Close()
 
-	data := toJSON(thing)
-	invalidData := toJSON(things.Thing{Type: "foo"})
+	th := thing
+	th.Key = "key"
+	data := toJSON(th)
 
 	cases := []struct {
 		desc        string
@@ -109,12 +110,20 @@ func TestAddThing(t *testing.T) {
 			location:    "/things/1",
 		},
 		{
-			desc:        "add thing with invalid data",
-			req:         invalidData,
+			desc:        "add thing with existing key",
+			req:         data,
 			contentType: contentType,
 			auth:        token,
-			status:      http.StatusBadRequest,
+			status:      http.StatusUnprocessableEntity,
 			location:    "",
+		},
+		{
+			desc:        "add thing with empty JSON request",
+			req:         "{}",
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusCreated,
+			location:    "/things/2",
 		},
 		{
 			desc:        "add thing with invalid auth token",
@@ -135,14 +144,6 @@ func TestAddThing(t *testing.T) {
 		{
 			desc:        "add thing with invalid request format",
 			req:         "}",
-			contentType: contentType,
-			auth:        token,
-			status:      http.StatusBadRequest,
-			location:    "",
-		},
-		{
-			desc:        "add thing with empty JSON request",
-			req:         "{}",
 			contentType: contentType,
 			auth:        token,
 			status:      http.StatusBadRequest,
@@ -190,7 +191,6 @@ func TestUpdateThing(t *testing.T) {
 	defer ts.Close()
 
 	data := toJSON(thing)
-	invalidData := toJSON(things.Thing{Type: "foo"})
 	sth, _ := svc.AddThing(token, thing)
 
 	cases := []struct {
@@ -210,20 +210,20 @@ func TestUpdateThing(t *testing.T) {
 			status:      http.StatusOK,
 		},
 		{
+			desc:        "update thing with empty JSON request",
+			req:         "{}",
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusOK,
+		},
+		{
 			desc:        "update non-existent thing",
 			req:         data,
 			id:          strconv.FormatUint(wrongID, 10),
 			contentType: contentType,
 			auth:        token,
 			status:      http.StatusNotFound,
-		},
-		{
-			desc:        "update thing with invalid data",
-			req:         invalidData,
-			id:          sth.ID,
-			contentType: contentType,
-			auth:        token,
-			status:      http.StatusBadRequest,
 		},
 		{
 			desc:        "update thing with invalid id",
@@ -252,14 +252,6 @@ func TestUpdateThing(t *testing.T) {
 		{
 			desc:        "update thing with invalid data format",
 			req:         "{",
-			id:          sth.ID,
-			contentType: contentType,
-			auth:        token,
-			status:      http.StatusBadRequest,
-		},
-		{
-			desc:        "update thing with empty JSON request",
-			req:         "{}",
 			id:          sth.ID,
 			contentType: contentType,
 			auth:        token,
@@ -298,16 +290,136 @@ func TestUpdateThing(t *testing.T) {
 	}
 }
 
+func TestUpdateKey(t *testing.T) {
+	svc := newService(map[string]string{token: email})
+	ts := newServer(svc)
+	defer ts.Close()
+
+	th := thing
+	th.Key = "key"
+	sth, _ := svc.AddThing(token, th)
+
+	sth.Key = "new-key"
+	data := toJSON(sth)
+
+	sth.Key = "key"
+	dummyData := toJSON(sth)
+
+	cases := []struct {
+		desc        string
+		req         string
+		id          string
+		contentType string
+		auth        string
+		status      int
+	}{
+		{
+			desc:        "update key for an existing thing",
+			req:         data,
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusOK,
+		},
+		{
+			desc:        "update thing with conflicting key",
+			req:         data,
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusUnprocessableEntity,
+		},
+		{
+			desc:        "update key with empty JSON request",
+			req:         "{}",
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusBadRequest,
+		},
+		{
+			desc:        "update key of non-existent thing",
+			req:         dummyData,
+			id:          strconv.FormatUint(wrongID, 10),
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusNotFound,
+		},
+		{
+			desc:        "update thing with invalid id",
+			req:         dummyData,
+			id:          "invalid",
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusNotFound,
+		},
+		{
+			desc:        "update thing with invalid user token",
+			req:         data,
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        wrongValue,
+			status:      http.StatusForbidden,
+		},
+		{
+			desc:        "update thing with empty user token",
+			req:         data,
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        "",
+			status:      http.StatusForbidden,
+		},
+		{
+			desc:        "update thing with invalid data format",
+			req:         "{",
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusBadRequest,
+		},
+		{
+			desc:        "update thing with empty request",
+			req:         "",
+			id:          sth.ID,
+			contentType: contentType,
+			auth:        token,
+			status:      http.StatusBadRequest,
+		},
+		{
+			desc:        "update thing without content type",
+			req:         data,
+			id:          sth.ID,
+			contentType: "",
+			auth:        token,
+			status:      http.StatusUnsupportedMediaType,
+		},
+	}
+
+	for _, tc := range cases {
+		req := testRequest{
+			client:      ts.Client(),
+			method:      http.MethodPatch,
+			url:         fmt.Sprintf("%s/things/%s/key", ts.URL, tc.id),
+			contentType: tc.contentType,
+			token:       tc.auth,
+			body:        strings.NewReader(tc.req),
+		}
+		res, err := req.make()
+		assert.Nil(t, err, fmt.Sprintf("%s: unexpected error %s", tc.desc, err))
+		assert.Equal(t, tc.status, res.StatusCode, fmt.Sprintf("%s: expected status code %d got %d", tc.desc, tc.status, res.StatusCode))
+	}
+}
+
 func TestViewThing(t *testing.T) {
 	svc := newService(map[string]string{token: email})
 	ts := newServer(svc)
 	defer ts.Close()
 
-	sth, _ := svc.AddThing(token, thing)
+	sth, err := svc.AddThing(token, thing)
+	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 
 	thres := thingRes{
 		ID:       sth.ID,
-		Type:     sth.Type,
 		Name:     sth.Name,
 		Key:      sth.Key,
 		Metadata: sth.Metadata,
@@ -386,7 +498,6 @@ func TestListThings(t *testing.T) {
 		require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 		thres := thingRes{
 			ID:       sth.ID,
-			Type:     sth.Type,
 			Name:     sth.Name,
 			Key:      sth.Key,
 			Metadata: sth.Metadata,
@@ -534,7 +645,6 @@ func TestListThingsByChannel(t *testing.T) {
 
 		thres := thingRes{
 			ID:       sth.ID,
-			Type:     sth.Type,
 			Name:     sth.Name,
 			Key:      sth.Key,
 			Metadata: sth.Metadata,
@@ -1538,17 +1648,16 @@ func TestDisconnnect(t *testing.T) {
 }
 
 type thingRes struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Name     string `json:"name,omitempty"`
-	Key      string `json:"key"`
-	Metadata string `json:"metadata,omitempty"`
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name,omitempty"`
+	Key      string                 `json:"key"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type channelRes struct {
-	ID       string `json:"id"`
-	Name     string `json:"name,omitempty"`
-	Metadata string `json:"metadata,omitempty"`
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type thingsPageRes struct {

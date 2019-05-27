@@ -4,7 +4,7 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 
-module Connection exposing (Model, Msg(..), initial, update, view)
+port module Connection exposing (Model, Msg(..), initial, update, view)
 
 import Bootstrap.Button as Button
 import Bootstrap.Card as Card
@@ -13,19 +13,23 @@ import Bootstrap.Form as Form
 import Bootstrap.Form.Checkbox as Checkbox
 import Bootstrap.Form.Input as Input
 import Bootstrap.Grid as Grid
+import Bootstrap.Grid.Col as Col
 import Bootstrap.Table as Table
 import Bootstrap.Text as Text
 import Bootstrap.Utilities.Spacing as Spacing
 import Channel
 import Debug exposing (log)
 import Error
-import Helpers
+import Helpers exposing (faIcons, fontAwesome)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Http
-import HttpMF exposing (path)
+import HttpMF exposing (paths)
+import Json.Decode as D
+import Json.Encode as E
 import List.Extra
+import Ports exposing (..)
 import Thing
 import Url.Builder as B
 
@@ -36,6 +40,7 @@ type alias Model =
     , channels : Channel.Model
     , checkedThingsIds : List String
     , checkedChannelsIds : List String
+    , websocketIn : List String
     }
 
 
@@ -46,6 +51,7 @@ initial =
     , channels = Channel.initial
     , checkedThingsIds = []
     , checkedChannelsIds = []
+    , websocketIn = []
     }
 
 
@@ -55,28 +61,38 @@ type Msg
     | ThingMsg Thing.Msg
     | ChannelMsg Channel.Msg
     | GotResponse (Result Http.Error String)
-    | CheckThing String
+    | CheckThing ( String, String )
     | CheckChannel String
+
+
+resetChecked : Model -> Model
+resetChecked model =
+    { model | checkedThingsIds = [], checkedChannelsIds = [] }
+
+
+isEmptyChecked : Model -> Bool
+isEmptyChecked model =
+    List.isEmpty model.checkedThingsIds || List.isEmpty model.checkedChannelsIds
 
 
 update : Msg -> Model -> String -> ( Model, Cmd Msg )
 update msg model token =
     case msg of
         Connect ->
-            if List.isEmpty model.checkedThingsIds || List.isEmpty model.checkedChannelsIds then
+            if isEmptyChecked model then
                 ( model, Cmd.none )
 
             else
-                ( { model | checkedThingsIds = [], checkedChannelsIds = [] }
+                ( resetChecked model
                 , Cmd.batch (connect model.checkedThingsIds model.checkedChannelsIds "PUT" token)
                 )
 
         Disconnect ->
-            if List.isEmpty model.checkedThingsIds || List.isEmpty model.checkedChannelsIds then
+            if isEmptyChecked model then
                 ( model, Cmd.none )
 
             else
-                ( { model | checkedThingsIds = [], checkedChannelsIds = [] }
+                ( resetChecked model
                 , Cmd.batch (connect model.checkedThingsIds model.checkedChannelsIds "DELETE" token)
                 )
 
@@ -102,8 +118,12 @@ update msg model token =
             in
             ( { model | channels = updatedChannel }, Cmd.map ChannelMsg channelCmd )
 
-        CheckThing id ->
-            ( { model | checkedThingsIds = Helpers.checkEntity id model.checkedThingsIds }, Cmd.none )
+        CheckThing thing ->
+            ( { model
+                | checkedThingsIds = Helpers.checkEntity (Tuple.first thing) model.checkedThingsIds
+              }
+            , Cmd.none
+            )
 
         CheckChannel id ->
             ( { model | checkedChannelsIds = Helpers.checkEntity id model.checkedChannelsIds }, Cmd.none )
@@ -118,48 +138,18 @@ view model =
     Grid.container []
         [ Grid.row []
             [ Grid.col []
-                [ Card.config
-                    []
-                    |> Card.headerH3 [] [ text "Things" ]
-                    |> Card.block []
-                        [ Block.custom
-                            (Table.table
-                                { options = [ Table.striped, Table.hover, Table.small ]
-                                , thead =
-                                    Table.simpleThead
-                                        [ Table.th [] [ text "Name" ]
-                                        , Table.th [] [ text "ID" ]
-                                        ]
-                                , tbody = Table.tbody [] <| genThingRows model.checkedThingsIds model.things.things.list
-                                }
-                            )
-                        ]
-                    |> Card.view
-                , Html.map ThingMsg (Helpers.genPagination model.things.things.total Thing.SubmitPage)
-                ]
+                (Helpers.appendIf (model.things.things.total > model.things.limit)
+                    [ Helpers.genCardConfig faIcons.things "Things" (genThingRows model.checkedThingsIds model.things.things.list) ]
+                    (Html.map ThingMsg (Helpers.genPagination model.things.things.total (Helpers.offsetToPage model.things.offset model.things.limit) Thing.SubmitPage))
+                )
             , Grid.col []
-                [ Card.config
-                    []
-                    |> Card.headerH3 [] [ text "Channels" ]
-                    |> Card.block []
-                        [ Block.custom
-                            (Table.table
-                                { options = [ Table.striped, Table.hover, Table.small ]
-                                , thead =
-                                    Table.simpleThead
-                                        [ Table.th [] [ text "Name" ]
-                                        , Table.th [] [ text "ID" ]
-                                        ]
-                                , tbody = Table.tbody [] <| genChannelRows model.checkedChannelsIds model.channels.channels.list
-                                }
-                            )
-                        ]
-                    |> Card.view
-                , Html.map ChannelMsg (Helpers.genPagination model.channels.channels.total Channel.SubmitPage)
-                ]
+                (Helpers.appendIf (model.channels.channels.total > model.channels.limit)
+                    [ Helpers.genCardConfig faIcons.channels "Channels" (genChannelRows model.checkedChannelsIds model.channels.channels.list) ]
+                    (Html.map ChannelMsg (Helpers.genPagination model.channels.channels.total (Helpers.offsetToPage model.channels.offset model.channels.limit) Channel.SubmitPage))
+                )
             ]
         , Grid.row []
-            [ Grid.col []
+            [ Grid.col [ Col.attrs [ align "left" ] ]
                 [ Form.form []
                     [ Button.button [ Button.success, Button.attrs [ Spacing.ml1 ], Button.onClick Connect ] [ text "Connect" ]
                     , Button.button [ Button.danger, Button.attrs [ Spacing.ml1 ], Button.onClick Disconnect ] [ text "Disconnect" ]
@@ -175,8 +165,9 @@ genThingRows checkedThingsIds things =
     List.map
         (\thing ->
             Table.tr []
-                [ Table.td [] [ input [ type_ "checkbox", onClick (CheckThing thing.id), checked (Helpers.isChecked thing.id checkedThingsIds) ] [], text (" " ++ Helpers.parseString thing.name) ]
+                [ Table.td [] [ text (" " ++ Helpers.parseString thing.name) ]
                 , Table.td [] [ text thing.id ]
+                , Table.td [] [ input [ type_ "checkbox", onClick (CheckThing ( thing.id, thing.key )), checked (Helpers.isChecked thing.id checkedThingsIds) ] [] ]
                 ]
         )
         things
@@ -187,8 +178,9 @@ genChannelRows checkedChannelsIds channels =
     List.map
         (\channel ->
             Table.tr []
-                [ Table.td [] [ input [ type_ "checkbox", onClick (CheckChannel channel.id), checked (Helpers.isChecked channel.id checkedChannelsIds) ] [], text (" " ++ Helpers.parseString channel.name) ]
+                [ Table.td [] [ text (" " ++ Helpers.parseString channel.name) ]
                 , Table.td [] [ text channel.id ]
+                , Table.td [] [ input [ type_ "checkbox", onClick (CheckChannel channel.id), checked (Helpers.isChecked channel.id checkedChannelsIds) ] [] ]
                 ]
         )
         channels
@@ -207,7 +199,7 @@ connect checkedThingsIds checkedChannelsIds method token =
                 List.map
                     (\channelid ->
                         HttpMF.request
-                            (B.relative [ path.channels, channelid, path.things, thingid ] [])
+                            (B.relative [ paths.channels, channelid, paths.things, thingid ] [])
                             method
                             token
                             Http.emptyBody

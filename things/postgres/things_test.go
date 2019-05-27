@@ -21,13 +21,21 @@ import (
 
 func TestThingSave(t *testing.T) {
 	email := "thing-save@example.com"
-	thingRepo := postgres.NewThingRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	thing := things.Thing{
-		ID:    uuid.New().ID(),
+		ID:    thid,
 		Owner: email,
-		Key:   uuid.New().ID(),
+		Key:   thkey,
 	}
+
+	nonexistentThingKey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	cases := []struct {
 		desc  string
@@ -42,12 +50,16 @@ func TestThingSave(t *testing.T) {
 		{
 			desc: "create invalid thing",
 			thing: things.Thing{
-				ID:       uuid.New().ID(),
-				Owner:    email,
-				Key:      uuid.New().ID(),
-				Metadata: "invalid",
+				ID:    "invalid",
+				Owner: email,
+				Key:   nonexistentThingKey,
 			},
 			err: things.ErrMalformedEntity,
+		},
+		{
+			desc:  "create thing with conflicting key",
+			thing: thing,
+			err:   things.ErrConflict,
 		},
 	}
 
@@ -59,16 +71,24 @@ func TestThingSave(t *testing.T) {
 
 func TestThingUpdate(t *testing.T) {
 	email := "thing-update@example.com"
-	thingRepo := postgres.NewThingRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	thing := things.Thing{
-		ID:    uuid.New().ID(),
+		ID:    thid,
 		Owner: email,
-		Key:   uuid.New().ID(),
+		Key:   thkey,
 	}
 
 	id, _ := thingRepo.Save(thing)
 	thing.ID = id
+
+	nonexistentThingID, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	cases := []struct {
 		desc  string
@@ -83,7 +103,7 @@ func TestThingUpdate(t *testing.T) {
 		{
 			desc: "update non-existing thing with existing user",
 			thing: things.Thing{
-				ID:    uuid.New().ID(),
+				ID:    nonexistentThingID,
 				Owner: email,
 			},
 			err: things.ErrNotFound,
@@ -99,19 +119,10 @@ func TestThingUpdate(t *testing.T) {
 		{
 			desc: "update non-existing thing with non-existing user",
 			thing: things.Thing{
-				ID:    uuid.New().ID(),
+				ID:    nonexistentThingID,
 				Owner: wrongValue,
 			},
 			err: things.ErrNotFound,
-		},
-		{
-			desc: "update thing with invalid data",
-			thing: things.Thing{
-				ID:       id,
-				Owner:    email,
-				Metadata: "invalid",
-			},
-			err: things.ErrMalformedEntity,
 		},
 	}
 
@@ -121,18 +132,111 @@ func TestThingUpdate(t *testing.T) {
 	}
 }
 
-func TestSingleThingRetrieval(t *testing.T) {
-	email := "thing-single-retrieval@example.com"
-	thingRepo := postgres.NewThingRepository(db, testLog)
+func TestUpdateKey(t *testing.T) {
+	email := "thing-update=key@example.com"
+	newKey := "new-key"
+	thingRepo := postgres.NewThingRepository(db)
+
+	ethid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	ethkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+
+	existingThing := things.Thing{
+		ID:    ethid,
+		Owner: email,
+		Key:   ethkey,
+	}
+	existingID, _ := thingRepo.Save(existingThing)
+	existingThing.ID = existingID
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	thing := things.Thing{
-		ID:    uuid.New().ID(),
+		ID:    thid,
 		Owner: email,
-		Key:   uuid.New().ID(),
+		Key:   thkey,
 	}
 
 	id, _ := thingRepo.Save(thing)
 	thing.ID = id
+
+	nonexistentThingID, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+
+	cases := []struct {
+		desc  string
+		owner string
+		id    string
+		key   string
+		err   error
+	}{
+		{
+			desc:  "update key of an existing thing",
+			owner: thing.Owner,
+			id:    thing.ID,
+			key:   newKey,
+			err:   nil,
+		},
+		{
+			desc:  "update key of a non-existing thing with existing user",
+			owner: thing.Owner,
+			id:    nonexistentThingID,
+			key:   newKey,
+			err:   things.ErrNotFound,
+		},
+		{
+			desc:  "update key of an existing thing with non-existing user",
+			owner: wrongValue,
+			id:    thing.ID,
+			key:   newKey,
+			err:   things.ErrNotFound,
+		},
+		{
+			desc:  "update key of a non-existing thing with non-existing user",
+			owner: wrongValue,
+			id:    nonexistentThingID,
+			key:   newKey,
+			err:   things.ErrNotFound,
+		},
+		{
+			desc:  "update key with existing key value",
+			owner: thing.Owner,
+			id:    thing.ID,
+			key:   existingThing.Key,
+			err:   things.ErrConflict,
+		},
+	}
+
+	for _, tc := range cases {
+		err := thingRepo.UpdateKey(tc.owner, tc.id, tc.key)
+		assert.Equal(t, tc.err, err, fmt.Sprintf("%s: expected %s got %s\n", tc.desc, tc.err, err))
+	}
+}
+
+func TestSingleThingRetrieval(t *testing.T) {
+	email := "thing-single-retrieval@example.com"
+	thingRepo := postgres.NewThingRepository(db)
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+
+	thing := things.Thing{
+		ID:    thid,
+		Owner: email,
+		Key:   thkey,
+	}
+
+	id, _ := thingRepo.Save(thing)
+	thing.ID = id
+
+	nonexistentThingID, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	cases := map[string]struct {
 		owner string
@@ -146,7 +250,7 @@ func TestSingleThingRetrieval(t *testing.T) {
 		},
 		"retrieve non-existing thing with existing user": {
 			owner: thing.Owner,
-			ID:    uuid.New().ID(),
+			ID:    nonexistentThingID,
 			err:   things.ErrNotFound,
 		},
 		"retrieve thing with non-existing owner": {
@@ -169,12 +273,17 @@ func TestSingleThingRetrieval(t *testing.T) {
 
 func TestThingRetrieveByKey(t *testing.T) {
 	email := "thing-retrieved-by-key@example.com"
-	thingRepo := postgres.NewThingRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	thing := things.Thing{
-		ID:    uuid.New().ID(),
+		ID:    thid,
 		Owner: email,
-		Key:   uuid.New().ID(),
+		Key:   thkey,
 	}
 
 	id, _ := thingRepo.Save(thing)
@@ -207,15 +316,19 @@ func TestThingRetrieveByKey(t *testing.T) {
 func TestMultiThingRetrieval(t *testing.T) {
 	email := "thing-multi-retrieval@example.com"
 	idp := uuid.New()
-	thingRepo := postgres.NewThingRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
 
 	n := uint64(10)
 
 	for i := uint64(0); i < n; i++ {
+		thid, err := idp.ID()
+		require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+		thkey, err := idp.ID()
+		require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 		t := things.Thing{
-			ID:    idp.ID(),
+			ID:    thid,
 			Owner: email,
-			Key:   idp.ID(),
+			Key:   thkey,
 		}
 
 		thingRepo.Save(t)
@@ -248,30 +361,38 @@ func TestMultiThingRetrieval(t *testing.T) {
 	}
 
 	for desc, tc := range cases {
-		page := thingRepo.RetrieveAll(tc.owner, tc.offset, tc.limit)
+		page, err := thingRepo.RetrieveAll(tc.owner, tc.offset, tc.limit)
 		size := uint64(len(page.Things))
 		assert.Equal(t, tc.size, size, fmt.Sprintf("%s: expected %d got %d\n", desc, tc.size, size))
+		assert.Nil(t, err, fmt.Sprintf("%s: expected no error got %d\n", desc, err))
 	}
 }
 
 func TestMultiThingRetrievalByChannel(t *testing.T) {
 	email := "thing-multi-retrieval-by-channel@example.com"
 	idp := uuid.New()
-	thingRepo := postgres.NewThingRepository(db, testLog)
-	channelRepo := postgres.NewChannelRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
+	channelRepo := postgres.NewChannelRepository(db)
 
 	n := uint64(10)
 
+	chid, err := idp.ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+
 	cid, err := channelRepo.Save(things.Channel{
-		ID:    idp.ID(),
+		ID:    chid,
 		Owner: email,
 	})
 	require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 	for i := uint64(0); i < n; i++ {
+		thid, err := idp.ID()
+		require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+		thkey, err := idp.ID()
+		require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 		th := things.Thing{
-			ID:    idp.ID(),
+			ID:    thid,
 			Owner: email,
-			Key:   idp.ID(),
+			Key:   thkey,
 		}
 
 		tid, err := thingRepo.Save(th)
@@ -280,12 +401,16 @@ func TestMultiThingRetrievalByChannel(t *testing.T) {
 		require.Nil(t, err, fmt.Sprintf("unexpected error: %s", err))
 	}
 
+	nonexistentChanID, err := idp.ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+
 	cases := map[string]struct {
 		owner   string
 		channel string
 		offset  uint64
 		limit   uint64
 		size    uint64
+		err     error
 	}{
 		"retrieve all things by channel with existing owner": {
 			owner:   email,
@@ -310,28 +435,42 @@ func TestMultiThingRetrievalByChannel(t *testing.T) {
 		},
 		"retrieve things by non-existent channel": {
 			owner:   email,
-			channel: "non-existent",
+			channel: nonexistentChanID,
 			offset:  0,
 			limit:   n,
 			size:    0,
 		},
+		"retrieve things with malformed UUID": {
+			owner:   email,
+			channel: wrongValue,
+			offset:  0,
+			limit:   n,
+			size:    0,
+			err:     things.ErrNotFound,
+		},
 	}
 
 	for desc, tc := range cases {
-		page := thingRepo.RetrieveByChannel(tc.owner, tc.channel, tc.offset, tc.limit)
+		page, err := thingRepo.RetrieveByChannel(tc.owner, tc.channel, tc.offset, tc.limit)
 		size := uint64(len(page.Things))
 		assert.Equal(t, tc.size, size, fmt.Sprintf("%s: expected %d got %d\n", desc, tc.size, size))
+		assert.Equal(t, tc.err, err, fmt.Sprintf("%s: expected no error got %d\n", desc, err))
 	}
 }
 
 func TestThingRemoval(t *testing.T) {
 	email := "thing-removal@example.com"
-	thingRepo := postgres.NewThingRepository(db, testLog)
+	thingRepo := postgres.NewThingRepository(db)
+
+	thid, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
+	thkey, err := uuid.New().ID()
+	require.Nil(t, err, fmt.Sprintf("got unexpected error: %s", err))
 
 	thing := things.Thing{
-		ID:    uuid.New().ID(),
+		ID:    thid,
 		Owner: email,
-		Key:   uuid.New().ID(),
+		Key:   thkey,
 	}
 
 	id, _ := thingRepo.Save(thing)

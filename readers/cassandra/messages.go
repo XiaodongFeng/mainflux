@@ -9,6 +9,7 @@ package cassandra
 
 import (
 	"fmt"
+
 	"github.com/gocql/gocql"
 	"github.com/mainflux/mainflux"
 	"github.com/mainflux/mainflux/readers"
@@ -22,13 +23,25 @@ type cassandraRepository struct {
 
 // New instantiates Cassandra message repository.
 func New(session *gocql.Session) readers.MessageRepository {
-	return cassandraRepository{session: session}
+	return cassandraRepository{
+		session: session,
+	}
 }
 
-func (cr cassandraRepository) ReadAll(chanID string, offset, limit uint64, query map[string]string) []mainflux.Message {
-	cql, values := buildQuery(chanID, offset, limit, query)
+func (cr cassandraRepository) ReadAll(chanID string, offset, limit uint64, query map[string]string) (readers.MessagesPage, error) {
+	names := []string{}
+	vals := []interface{}{chanID}
+	for name, val := range query {
+		names = append(names, name)
+		vals = append(vals, val)
+	}
+	vals = append(vals, offset+limit)
 
-	iter := cr.session.Query(cql, values...).Iter()
+	selectCQL := buildSelectQuery(chanID, offset, limit, names)
+	countCQL := buildCountQuery(chanID, names)
+
+	iter := cr.session.Query(selectCQL, vals...).Iter()
+	defer iter.Close()
 	scanner := iter.Scanner()
 
 	// skip first OFFSET rows
@@ -42,12 +55,19 @@ func (cr cassandraRepository) ReadAll(chanID string, offset, limit uint64, query
 	var strVal, dataVal *string
 	var boolVal *bool
 
-	page := []mainflux.Message{}
+	page := readers.MessagesPage{
+		Offset:   offset,
+		Limit:    limit,
+		Messages: []mainflux.Message{},
+	}
 	for scanner.Next() {
 		var msg mainflux.Message
-		scanner.Scan(&msg.Channel, &msg.Subtopic, &msg.Publisher, &msg.Protocol,
+		err := scanner.Scan(&msg.Channel, &msg.Subtopic, &msg.Publisher, &msg.Protocol,
 			&msg.Name, &msg.Unit, &floatVal, &strVal, &boolVal,
 			&dataVal, &valueSum, &msg.Time, &msg.UpdateTime, &msg.Link)
+		if err != nil {
+			return readers.MessagesPage{}, err
+		}
 
 		switch {
 		case floatVal != nil:
@@ -64,28 +84,24 @@ func (cr cassandraRepository) ReadAll(chanID string, offset, limit uint64, query
 			msg.ValueSum = &mainflux.SumValue{Value: *valueSum}
 		}
 
-		page = append(page, msg)
+		page.Messages = append(page.Messages, msg)
 	}
 
-	if err := iter.Close(); err != nil {
-		return []mainflux.Message{}
+	if err := cr.session.Query(countCQL, vals[:len(vals)-1]...).Scan(&page.Total); err != nil {
+		return readers.MessagesPage{}, err
 	}
 
-	return page
+	return page, nil
 }
 
-func buildQuery(chanID string, offset, limit uint64, query map[string]string) (string, []interface{}) {
-	var condSql string
-	var values []interface{}
-
+func buildSelectQuery(chanID string, offset, limit uint64, names []string) string {
+	var condCQL string
 	cql := `SELECT channel, subtopic, publisher, protocol, name, unit,
-			value, string_value, bool_value, data_value, value_sum, time,
+	        value, string_value, bool_value, data_value, value_sum, time,
 			update_time, link FROM messages WHERE channel = ? %s LIMIT ?
 			ALLOW FILTERING`
 
-	values = append(values, chanID)
-
-	for name, value := range query {
+	for _, name := range names {
 		switch name {
 		case
 			"channel",
@@ -93,11 +109,28 @@ func buildQuery(chanID string, offset, limit uint64, query map[string]string) (s
 			"publisher",
 			"name",
 			"protocol":
-			condSql = fmt.Sprintf(`%s AND %s = ?`, condSql, name)
-			values = append(values, value)
+			condCQL = fmt.Sprintf(`%s AND %s = ?`, condCQL, name)
 		}
 	}
 
-	values = append(values, offset+limit)
-	return fmt.Sprintf(cql, condSql), values
+	return fmt.Sprintf(cql, condCQL)
+}
+
+func buildCountQuery(chanID string, names []string) string {
+	var condCQL string
+	cql := `SELECT COUNT(*) FROM messages WHERE channel = ? %s ALLOW FILTERING`
+
+	for _, name := range names {
+		switch name {
+		case
+			"channel",
+			"subtopic",
+			"publisher",
+			"name",
+			"protocol":
+			condCQL = fmt.Sprintf(`%s AND %s = ?`, condCQL, name)
+		}
+	}
+
+	return fmt.Sprintf(cql, condCQL)
 }

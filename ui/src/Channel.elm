@@ -19,14 +19,15 @@ import Bootstrap.Table as Table
 import Bootstrap.Utilities.Spacing as Spacing
 import Dict
 import Error
-import Helpers exposing (faIcons)
+import Helpers exposing (faIcons, fontAwesome)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Http
-import HttpMF exposing (path)
+import HttpMF exposing (paths)
 import Json.Decode as D
 import Json.Encode as E
+import JsonMF exposing (..)
 import ModalMF
 import Url.Builder as B
 
@@ -40,12 +41,12 @@ query =
 type alias Channel =
     { name : Maybe String
     , id : String
-    , metadata : Maybe String
+    , metadata : Maybe JsonValue
     }
 
 
 emptyChannel =
-    Channel (Just "") "" (Just "")
+    Channel (Just "") "" (Just ValueNull)
 
 
 type alias Channels =
@@ -123,11 +124,11 @@ update msg model token =
         ProvisionChannel ->
             ( resetEdit model
             , HttpMF.provision
-                (B.relative [ path.channels ] [])
+                (B.relative [ paths.channels ] [])
                 token
                 { emptyChannel
                     | name = Just model.name
-                    , metadata = Just model.metadata
+                    , metadata = stringToMaybeJsonValue model.metadata
                 }
                 channelEncoder
                 ProvisionedChannel
@@ -152,7 +153,7 @@ update msg model token =
             ( { model
                 | editMode = True
                 , name = Helpers.parseString model.channel.name
-                , metadata = Helpers.parseString model.channel.metadata
+                , metadata = maybeJsonValueToString model.channel.metadata
               }
             , Cmd.none
             )
@@ -160,11 +161,17 @@ update msg model token =
         UpdateChannel ->
             ( resetEdit { model | editMode = False }
             , HttpMF.update
-                (B.relative [ path.channels, model.channel.id ] [])
+                (B.relative [ paths.channels, model.channel.id ] [])
                 token
                 { emptyChannel
                     | name = Just model.name
-                    , metadata = Just model.metadata
+                    , metadata =
+                        case stringToJsonValue model.metadata of
+                            Ok jsonValue ->
+                                Just jsonValue
+
+                            Err err ->
+                                model.channel.metadata
                 }
                 channelEncoder
                 UpdatedChannel
@@ -181,7 +188,7 @@ update msg model token =
         RetrieveChannel channelid ->
             ( model
             , HttpMF.retrieve
-                (B.relative [ path.channels, channelid ] [])
+                (B.relative [ paths.channels, channelid ] [])
                 token
                 RetrievedChannel
                 channelDecoder
@@ -198,7 +205,7 @@ update msg model token =
         RetrieveChannels ->
             ( model
             , HttpMF.retrieve
-                (B.relative [ path.channels ] (Helpers.buildQueryParamList model.offset model.limit))
+                (B.relative [ paths.channels ] (Helpers.buildQueryParamList model.offset model.limit))
                 token
                 RetrievedChannels
                 channelsDecoder
@@ -207,7 +214,7 @@ update msg model token =
         RetrieveChannelsForThing thingid ->
             ( model
             , HttpMF.retrieve
-                (B.relative [ path.things, thingid, path.channels ] (Helpers.buildQueryParamList model.offset model.limit))
+                (B.relative [ paths.things, thingid, paths.channels ] (Helpers.buildQueryParamList model.offset model.limit))
                 token
                 RetrievedChannels
                 channelsDecoder
@@ -224,7 +231,7 @@ update msg model token =
         RemoveChannel id ->
             ( resetEdit model
             , HttpMF.remove
-                (B.relative [ path.channels, id ] [])
+                (B.relative [ paths.channels, id ] [])
                 token
                 RemovedChannel
             )
@@ -271,31 +278,38 @@ update msg model token =
 view : Model -> Html Msg
 view model =
     Grid.container []
-        [ Grid.row []
-            [ Grid.col [ Col.attrs [ align "right" ] ]
-                [ Button.button [ Button.outlinePrimary, Button.attrs [ Spacing.ml1, align "right" ], Button.onClick ShowProvisionModal ] [ text "ADD" ]
+        (Helpers.appendIf (model.channels.total > model.limit)
+            [ Grid.row []
+                [ Grid.col []
+                    [ Card.config []
+                        |> Card.header []
+                            [ Grid.row []
+                                [ Grid.col [ Col.attrs [ align "left" ] ]
+                                    [ h3 [] [ div [ class "table_header" ] [ i [ style "margin-right" "15px", class faIcons.channels ] [], text "Channels" ] ]
+                                    ]
+                                , Grid.col [ Col.attrs [ align "right" ] ]
+                                    [ Button.button [ Button.secondary, Button.attrs [ align "right" ], Button.onClick ShowProvisionModal ] [ text "ADD" ]
+                                    ]
+                                ]
+                            ]
+                        |> Card.block []
+                            [ Block.custom
+                                (Table.table
+                                    { options = [ Table.striped, Table.hover, Table.small ]
+                                    , thead = genTableHeader
+                                    , tbody = genTableBody model
+                                    }
+                                )
+                            ]
+                        |> Card.view
+                    ]
                 ]
+            , provisionModal model
+            , editModal model
             ]
-        , Grid.row []
-            [ Grid.col []
-                [ Card.config []
-                    |> Card.headerH3 [] [ text "Channels" ]
-                    |> Card.block []
-                        [ Block.custom
-                            (Table.table
-                                { options = [ Table.striped, Table.hover, Table.small ]
-                                , thead = genTableHeader
-                                , tbody = genTableBody model
-                                }
-                            )
-                        ]
-                    |> Card.view
-                ]
-            ]
-        , Helpers.genPagination model.channels.total SubmitPage
-        , provisionModal model
-        , editModal model
-        ]
+         <|
+            Helpers.genPagination model.channels.total (Helpers.offsetToPage model.offset model.limit) SubmitPage
+        )
 
 
 
@@ -385,11 +399,11 @@ editModalForm model =
     if model.editMode then
         ModalMF.modalForm
             [ ModalMF.FormRecord "name" SubmitName (Helpers.parseString model.channel.name) model.name
-            , ModalMF.FormRecord "metadata" SubmitMetadata (Helpers.parseString model.channel.metadata) model.metadata
+            , ModalMF.FormRecord "metadata" SubmitMetadata (maybeJsonValueToString model.channel.metadata) model.metadata
             ]
 
     else
-        ModalMF.modalDiv [ ( "name", Helpers.parseString model.channel.name ), ( "metadata", Helpers.parseString model.channel.metadata ) ]
+        ModalMF.modalDiv [ ( "name", Helpers.parseString model.channel.name ), ( "metadata", maybeJsonValueToString model.channel.metadata ) ]
 
 
 
@@ -401,7 +415,7 @@ channelDecoder =
     D.map3 Channel
         (D.maybe (D.field "name" D.string))
         (D.field "id" D.string)
-        (D.maybe (D.field "metadata" D.string))
+        (D.maybe (D.field "metadata" jsonValueDecoder))
 
 
 channelsDecoder : D.Decoder Channels
@@ -415,7 +429,7 @@ channelEncoder : Channel -> E.Value
 channelEncoder channel =
     E.object
         [ ( "name", E.string (Helpers.parseString channel.name) )
-        , ( "metadata", E.string (Helpers.parseString channel.metadata) )
+        , ( "metadata", jsonValueEncoder (maybeJsonValueToJsonValue channel.metadata) )
         ]
 
 
@@ -433,12 +447,12 @@ updateChannelList model token =
     ( model
     , Cmd.batch
         [ HttpMF.retrieve
-            (B.relative [ path.channels ] (Helpers.buildQueryParamList model.offset model.limit))
+            (B.relative [ paths.channels ] (Helpers.buildQueryParamList model.offset model.limit))
             token
             RetrievedChannels
             channelsDecoder
         , HttpMF.retrieve
-            (B.relative [ path.channels, model.channel.id ] [])
+            (B.relative [ paths.channels, model.channel.id ] [])
             token
             RetrievedChannel
             channelDecoder
@@ -450,7 +464,7 @@ updateChannelListForThing : Model -> String -> String -> ( Model, Cmd Msg )
 updateChannelListForThing model token thingid =
     ( model
     , HttpMF.retrieve
-        (B.relative [ path.things, thingid, path.channels ] (Helpers.buildQueryParamList model.offset model.limit))
+        (B.relative [ paths.things, thingid, paths.channels ] (Helpers.buildQueryParamList model.offset model.limit))
         token
         RetrievedChannels
         channelsDecoder

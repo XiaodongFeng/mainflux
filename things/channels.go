@@ -13,7 +13,7 @@ type Channel struct {
 	ID       string
 	Owner    string
 	Name     string
-	Metadata string
+	Metadata map[string]interface{}
 }
 
 // ChannelsPage contains page related metadata as well as list of channels that
@@ -39,11 +39,11 @@ type ChannelRepository interface {
 	RetrieveByID(string, string) (Channel, error)
 
 	// RetrieveAll retrieves the subset of channels owned by the specified user.
-	RetrieveAll(string, uint64, uint64) ChannelsPage
+	RetrieveAll(string, uint64, uint64) (ChannelsPage, error)
 
 	// RetrieveByThing retrieves the subset of channels owned by the specified
 	// user and have specified thing connected to them.
-	RetrieveByThing(string, string, uint64, uint64) ChannelsPage
+	RetrieveByThing(string, string, uint64, uint64) (ChannelsPage, error)
 
 	// Remove removes the channel having the provided identifier, that is owned
 	// by the specified user.

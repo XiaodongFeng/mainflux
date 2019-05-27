@@ -13,10 +13,11 @@ WORKDIR /app
 RUN npm install --unsafe-perm=true --allow-root -g elm
 
 COPY . /app
-RUN elm make --optimize src/Main.elm
+RUN elm make --optimize src/Main.elm --output=main.js
 
 # Stage 1, based on Nginx, to have only the compiled app, ready for production with Nginx
 FROM nginx:1.14.2-alpine
 COPY --from=builder /app/index.html /usr/share/nginx/html
+COPY --from=builder /app/main.js /usr/share/nginx/html
 COPY --from=builder /app/css/mainflux.css /usr/share/nginx/html/css/
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
