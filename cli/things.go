@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package cli
 
@@ -53,7 +49,7 @@ var cmdThings = []cobra.Command{
 			}
 
 			if args[0] == "all" {
-				l, err := sdk.Things(args[1], uint64(Offset), uint64(Limit))
+				l, err := sdk.Things(args[1], uint64(Offset), uint64(Limit), Name)
 				if err != nil {
 					logError(err)
 					return

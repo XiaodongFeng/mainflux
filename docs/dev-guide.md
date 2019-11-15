@@ -1,43 +1,49 @@
 ## Getting Mainflux
 
-Mainflux can be fetched from the official [Mainflux GitHub repository](https://github.com/Mainflux/mainflux):
+Mainflux source can be found in the official [Mainflux GitHub repository](https://github.com/Mainflux/mainflux). You should fork this repository in order to make changes to the project. The forked version of the repository should be cloned using the following:
 
-```
-go get github.com/mainflux/mainflux
+```bash
+git clone <forked repository> $GOPATH/src/github.com/mainflux/mainflux
 cd $GOPATH/src/github.com/mainflux/mainflux
 ```
 
 ## Building
 
 ### Prerequisites
-Make sure that you have [Protocol Buffers](https://developers.google.com/protocol-buffers/) compiler (`protoc`) installed.
+
+Make sure that you have [Protocol Buffers](https://developers.google.com/protocol-buffers/) (version 3.6.1) compiler (`protoc`) installed.
 
 [Go Protobuf](https://github.com/golang/protobuf) installation instructions are [here](https://github.com/golang/protobuf#installation).
 Go Protobuf uses C bindings, so you will need to install [C++ protobuf](https://github.com/google/protobuf) as a prerequisite.
-Mainflux uses `Protocol Buffers for Go with Gadgets` to generate faster marshaling and unmarshaling Go code. Protocol Buffers for Go with Gadgets instalation instructions can be found (here)(https://github.com/gogo/protobuf).
+Mainflux uses `Protocol Buffers for Go with Gadgets` to generate faster marshaling and unmarshaling Go code. Protocol Buffers for Go with Gadgets installation instructions can be found [here](https://github.com/gogo/protobuf).
+
+A copy of [Go](https://golang.org/doc/install) (version 1.13.3) and docker template (version 3.7) will also need to be installed on your system.
+
+If any of these versions seem outdated, the latest can always be found in our [CI script](https://github.com/mainflux/mainflux/blob/master/scripts/ci.sh).
 
 ### Build All Services
 
-Use `GNU Make` tool to build all Mainflux services:
+Use the *GNU Make* tool to build all Mainflux services:
 
-```
+```bash
 make
 ```
 
-Build artefacts will be put in the `build` directory.
+Build artifacts will be put in the `build` directory.
 
 > N.B. All Mainflux services are built as a statically linked binaries. This way they can be portable (transferred to any platform just by placing them there and running them) as they contain all needed libraries and do not relay on shared system libraries. This helps creating [FROM scratch](https://hub.docker.com/_/scratch/) dockers.
 
 ### Build Individual Microservice
+
 Individual microservices can be built with:
 
-```
+```bash
 make <microservice_name>
 ```
 
 For example:
 
-```
+```bash
 make http
 ```
 
@@ -47,19 +53,19 @@ will build the HTTP Adapter microservice.
 
 Dockers can be built with:
 
-```
+```bash
 make dockers
 ```
 
 or individually with:
 
-```
+```bash
 make docker_<microservice_name>
 ```
 
 For example:
 
-```
+```bash
 make docker_http
 ```
 
@@ -82,6 +88,23 @@ make docker_dev_<microservice_name>
 ```
 
 Commands `make dockers` and `make dockers_dev` are similar. The main difference is that building images in the development mode is done on the local machine, rather than an intermediate image, which makes building images much faster. Before running this command, corresponding binary needs to be built in order to make changes visible. This can be done using `make` or `make <service_name>` command. Commands `make dockers_dev` and `make docker_dev_<service_name>` should be used only for development to speed up the process of image building. **For deployment images, commands from section above should be used.**
+
+### Suggested workflow
+
+When the project is first cloned to your system, you will need to make sure and build all of the Mainflux services.
+
+```bash
+make
+make dockers_dev
+```
+
+As you develop and test changes, only the services related to your changes will need to be rebuilt. This will reduce compile time and create a much more enjoyable development experience.
+
+```bash
+make <microservice_name>
+make docker_dev_<microservice_name>
+make run
+```
 
 ### Overriding the default docker-compose configuration
 Sometimes, depending on the use case and the user's needs it might be useful to override or add some extra parameters to the docker-compose configuration. These configuration changes can be done by specifying multiple compose files with the [docker-compose command line option -f](https://docs.docker.com/compose/reference/overview/) as described [here](https://docs.docker.com/compose/extends/).
@@ -133,6 +156,18 @@ After that, the MQTT Adapter can be started from top directory (as it needs to f
 node mqtt/mqtt.js
 ```
 
+#### Troubleshooting
+Depending on your use case, MQTT topics, message size, the number of clients and the frequency with which the messages are sent it can happen that you experience some problems.
+
+Up until now it has been noticed that in case of high load, big messages and many clients it can happen that the MQTT microservice crashes with the following error:
+```
+mainflux-mqtt   | FATAL ERROR: CALL_AND_RETRY_LAST Allocation failed - JavaScript heap out of memory
+mainflux-mqtt exited with code 137
+```
+This problem is caused the default allowed memory in node (V8). [V8 gives the user 1.7GB per default](https://medium.com/tomincode/increasing-nodes-memory-337dfb1a60dd). To fix the problem you should add the following environment variable `NODE_OPTIONS:--max-old-space-size=SPACE_IN_MB` in the [environment section](https://github.com/mainflux/mainflux/blob/master/docker/aedes.yml#L31) of the aedes.yml configuration. To find the right value for the `--max-old-space-size` parameter you'll have to experiment a bit depending on your needs.
+
+The Mainflux MQTT service uses the [Aedes MQTT Broker](https://github.com/mcollina/aedes) for implementation of the MQTT related things. Therefore, for some questions or problems you can also check out the Aedes's documentation or reach out its contributors.
+
 ### Protobuf
 If you've made any changes to `.proto` files, you should call `protoc` command prior to compiling individual microservices.
 
@@ -148,7 +183,7 @@ A shorthand to do this via `make` tool is:
 make proto
 ```
 
-> N.B. This must be done once at the beginning in order to generate protobuf Go structures needed for the build. However, if you don't change any of `.proto` files, this step is not mandatory, since all generated files are included in the repo (those are files with `.pb.go` extension).
+> N.B. This must be done once at the beginning in order to generate protobuf Go structures needed for the build. However, if you don't change any of `.proto` files, this step is not mandatory, since all generated files are included in the repository (those are files with `.pb.go` extension).
 
 ### Cross-compiling for ARM
 Mainflux can be compiled for ARM platform and run on Raspberry Pi or other similar IoT gateways, by following the instructions [here](https://dave.cheney.net/2015/08/22/cross-compilation-with-go-1-5) or [here](https://www.alexruf.net/golang/arm/raspberrypi/2016/01/16/cross-compile-with-go-1-5-for-raspberry-pi.html) as well as information

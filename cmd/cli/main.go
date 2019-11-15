@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package main
 
@@ -118,6 +114,14 @@ func main() {
 		"o",
 		0,
 		"offset query parameter",
+	)
+
+	rootCmd.PersistentFlags().StringVarP(
+		&cli.Name,
+		"name",
+		"n",
+		"",
+		"name query parameter",
 	)
 
 	if err := rootCmd.Execute(); err != nil {

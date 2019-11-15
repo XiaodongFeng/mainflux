@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package cli
 
@@ -19,7 +15,9 @@ var (
 	// Limit query parameter
 	Limit uint = 10
 	// Offset query parameter
-	Offset uint
+	Offset uint = 0
+	// Name query parameter
+	Name string = ""
 )
 
 func logJSON(iList ...interface{}) {

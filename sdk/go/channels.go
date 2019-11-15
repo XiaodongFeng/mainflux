@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package sdk
 
@@ -50,8 +46,52 @@ func (sdk mfSDK) CreateChannel(channel Channel, token string) (string, error) {
 	return id, nil
 }
 
-func (sdk mfSDK) Channels(token string, offset, limit uint64) (ChannelsPage, error) {
-	endpoint := fmt.Sprintf("%s?offset=%d&limit=%d", channelsEndpoint, offset, limit)
+func (sdk mfSDK) CreateChannels(channels []Channel, token string) ([]Channel, error) {
+	data, err := json.Marshal(channels)
+	if err != nil {
+		return []Channel{}, ErrInvalidArgs
+	}
+
+	endpoint := fmt.Sprintf("%s/%s", channelsEndpoint, "bulk")
+	url := createURL(sdk.baseURL, sdk.channelsPrefix, endpoint)
+
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return []Channel{}, err
+	}
+
+	resp, err := sdk.sendRequest(req, token, string(CTJSON))
+	if err != nil {
+		return []Channel{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		switch resp.StatusCode {
+		case http.StatusBadRequest:
+			return []Channel{}, ErrInvalidArgs
+		case http.StatusForbidden:
+			return []Channel{}, ErrUnauthorized
+		default:
+			return []Channel{}, ErrFailedCreation
+		}
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return []Channel{}, err
+	}
+
+	var p createChannelsRes
+	if err := json.Unmarshal(body, &p); err != nil {
+		return []Channel{}, err
+	}
+
+	return p.Channels, nil
+}
+
+func (sdk mfSDK) Channels(token string, offset, limit uint64, name string) (ChannelsPage, error) {
+	endpoint := fmt.Sprintf("%s?offset=%d&limit=%d&name=%s", channelsEndpoint, offset, limit, name)
 	url := createURL(sdk.baseURL, sdk.thingsPrefix, endpoint)
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)

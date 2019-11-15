@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package sdk
 
@@ -131,8 +127,11 @@ type SDK interface {
 	// CreateThing registers new thing and returns its id.
 	CreateThing(thing Thing, token string) (string, error)
 
+	// CreateThings registers new things and returns their ids.
+	CreateThings(things []Thing, token string) ([]Thing, error)
+
 	// Things returns page of things.
-	Things(token string, offset, limit uint64) (ThingsPage, error)
+	Things(token string, offset, limit uint64, name string) (ThingsPage, error)
 
 	// ThingsByChannel returns page of things that are connected to specified
 	// channel.
@@ -156,8 +155,11 @@ type SDK interface {
 	// CreateChannel creates new channel and returns its id.
 	CreateChannel(channel Channel, token string) (string, error)
 
+	// CreateChannels registers new channels and returns their ids.
+	CreateChannels(channels []Channel, token string) ([]Channel, error)
+
 	// Channels returns page of channels.
-	Channels(token string, offset, limit uint64) (ChannelsPage, error)
+	Channels(token string, offset, limit uint64, name string) (ChannelsPage, error)
 
 	// ChannelsByThing returns page of channels that are connected to specified
 	// thing.
@@ -191,6 +193,7 @@ type mfSDK struct {
 	readerPrefix      string
 	usersPrefix       string
 	thingsPrefix      string
+	channelsPrefix    string
 	httpAdapterPrefix string
 	msgContentType    ContentType
 	client            *http.Client

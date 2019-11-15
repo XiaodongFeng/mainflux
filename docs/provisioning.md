@@ -37,8 +37,10 @@ an authorization key.
 
 ### Provisioning things
 
-Things are provisioned by executing request `POST /things` with a JSON payload.
-Note that you will also need `user_auth_token` in order to provision things
+> This endpoint will be depreciated in 0.11.0.  It will be replaced with the bulk endpoint currently found at /things/bulk.
+
+Things are created by executing request `POST /things` with a JSON payload.
+Note that you will also need `user_auth_token` in order to create things
 that belong to this particular user.
 
 ```
@@ -54,6 +56,27 @@ Content-Type: application/json
 Location: /things/81380742-7116-4f6f-9800-14fe464f6773
 Date: Tue, 10 Apr 2018 10:02:59 GMT
 Content-Length: 0
+```
+
+### Bulk provisioning things
+
+Multiple things can be created by executing a `POST /things/bulk` request with a JSON payload.  The payload should contain a JSON array of the things to be created.  If there is an error any of the things, none of the things will be created.
+
+```bash
+curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -X POST -H "Content-Type: application/json" -H "Authorization: <user_auth_token>" https://localhost/things/bulk -d '[{"name":"weio"},{"name":"bob"}]'
+```
+
+The response's body will contain a list of the created things.
+
+```
+HTTP/2 201
+server: nginx/1.16.0
+date: Tue, 22 Oct 2019 02:19:15 GMT
+content-type: application/json
+content-length: 222
+access-control-expose-headers: Location
+
+{"things":[{"id":"8909adbf-312f-41eb-8cfc-ccc8c4e3655e","name":"weio","key":"4ef103cc-964a-41b5-b75b-b7415c3a3619"},{"id":"2fcd2349-38f7-4b5c-8a29-9607b2ca8ff5","name":"bob","key":"ff0d1490-355c-4dcf-b322-a4c536c8c3bf"}]}
 ```
 
 ### Retrieving provisioned things
@@ -100,6 +123,13 @@ group of things. In that case, your request should look like:
 curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -H "Authorization: <user_auth_token>" https://localhost/things?offset=0&limit=5
 ```
 
+You can specify `name` and/or `metadata` parameters in order to fetch specific
+group of things. When specifiying metadata you can specify just a part of the metadata json you want to match
+
+```
+curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -H "Authorization: <user_auth_token>" https://localhost/things?offset=0&limit=5&metadata={"serial":"123456"}
+```
+
 If you don't provide them, default values will be used instead: 0 for `offset`,
 and 10 for `limit`. Note that `limit` cannot be set to values greater than 100. Providing
 invalid values will be considered malformed request.
@@ -114,7 +144,9 @@ curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -X DELETE
 
 ### Provisioning channels
 
-Channels are provisioned by executing request `POST /channels`:
+> This endpoint will be depreciated in 0.11.0.  It will be replaced with the bulk endpoint currently found at /channels/bulk.
+
+Channels are created by executing request `POST /channels`:
 
 ```
 curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -X POST -H "Content-Type: application/json" -H "Authorization: <user_auth_token>" https://localhost/channels -d '{"name":"mychan"}'
@@ -129,6 +161,27 @@ Content-Type: application/json
 Location: /channels/19daa7a8-a489-4571-8714-ef1a214ed914
 Date: Tue, 10 Apr 2018 11:30:07 GMT
 Content-Length: 0
+```
+
+### Bulk provisioning channels
+
+Multiple channels can be created by executing a `POST /things/bulk` request with a JSON payload.  The payload should contain a JSON array of the channels to be created.  If there is an error any of the channels, none of the channels will be created.
+
+```bash
+curl -s -S -i --cacert docker/ssl/certs/mainflux-server.crt --insecure -X POST -H "Content-Type: application/json" -H "Authorization: <user_auth_token>" https://localhost/channels/bulk -d '[{"name":"joe"},{"name":"betty"}]'
+```
+
+The response's body will contain a list of the created channels.
+
+```
+HTTP/2 201
+server: nginx/1.16.0
+date: Tue, 22 Oct 2019 02:14:41 GMT
+content-type: application/json
+content-length: 135
+access-control-expose-headers: Location
+
+{"channels":[{"id":"5a21bbcb-4c9a-4bb4-af31-9982d00f7a6e","name":"joe"},{"id":"d74b119b-2eea-4285-a999-9f747869bb45","name":"betty"}]}
 ```
 
 ### Retrieving provisioned channels

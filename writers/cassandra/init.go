@@ -1,9 +1,5 @@
-//
-// Copyright (c) 2018
-// Mainflux
-//
+// Copyright (c) Mainflux
 // SPDX-License-Identifier: Apache-2.0
-//
 
 package cassandra
 
@@ -21,7 +17,7 @@ const table = `CREATE TABLE IF NOT EXISTS messages (
     	string_value text,
         bool_value boolean,
         data_value text,
-    	value_sum double,
+    	sum double,
     	time double,
     	update_time double,
     	link text,

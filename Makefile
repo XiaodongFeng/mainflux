@@ -1,24 +1,38 @@
-## Copyright (c) 2015-2019
-## Mainflux
-##
-## SPDX-License-Identifier: Apache-2.0
+# Copyright (c) Mainflux
+# SPDX-License-Identifier: Apache-2.0
 
 BUILD_DIR = build
-SERVICES = users things http normalizer ws coap lora influxdb-writer influxdb-reader mongodb-writer mongodb-reader cassandra-writer cassandra-reader postgres-writer postgres-reader cli bootstrap
+SERVICES = users things http ws coap lora influxdb-writer influxdb-reader mongodb-writer \
+	mongodb-reader cassandra-writer cassandra-reader postgres-writer postgres-reader cli bootstrap opcua
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 CGO_ENABLED ?= 0
+GOARCH ?= amd64
 
 define compile_service
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) go build -ldflags "-s -w" -o ${BUILD_DIR}/mainflux-$(1) cmd/$(1)/main.go
 endef
 
 define make_docker
-	docker build --no-cache --build-arg SVC_NAME=$(subst docker_,,$(1)) --tag=mainflux/$(subst docker_,,$(1)) -f docker/Dockerfile .
+	$(eval svc=$(subst docker_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg SVC=$(svc) \
+		--build-arg GOARCH=$(GOARCH) \
+		--build-arg GOARM=$(GOARM) \
+		--tag=mainflux/$(svc) \
+		-f docker/Dockerfile .
 endef
 
 define make_docker_dev
-	docker build --build-arg SVC_NAME=$(subst docker_dev_,,$(1)) --tag=mainflux/$(subst docker_dev_,,$(1)) -f docker/Dockerfile.dev ./build
+	$(eval svc=$(subst docker_,,$(1)))
+
+	docker build \
+		--no-cache \
+		--build-arg SVC=$(svc) \
+		--tag=mainflux/$(svc) \
+		-f docker/Dockerfile.dev ./build
 endef
 
 all: $(SERVICES) mqtt
@@ -27,7 +41,7 @@ all: $(SERVICES) mqtt
 
 clean:
 	rm -rf ${BUILD_DIR}
-	rm -rf mqtt/node_modules
+	rm -rf mqtt/aedes/node_modules
 
 cleandocker:
 	# Stop all containers (if running)
@@ -48,6 +62,7 @@ ifdef pv
 	# Remove unused volumes
 	docker volume ls -f name=mainflux -f dangling=true -q | xargs -r docker volume rm
 endif
+
 install:
 	cp ${BUILD_DIR}/* $(GOBIN)
 
@@ -61,19 +76,26 @@ $(SERVICES):
 	$(call compile_service,$(@))
 
 $(DOCKERS):
-	$(call make_docker,$(@))
+	$(call make_docker,$(@),$(GOARCH))
+
+$(DOCKERS_DEV):
+	$(call make_docker_dev,$(@))
 
 docker_ui:
 	$(MAKE) -C ui docker
 
 docker_mqtt:
 	# MQTT Docker build must be done from root dir because it copies .proto files
-	docker build --tag=mainflux/mqtt -f mqtt/Dockerfile .
+ifeq ($(GOARCH), arm)
+	docker build --tag=mainflux/mqtt -f mqtt/aedes/Dockerfile.arm .
+else
+	docker build --tag=mainflux/mqtt -f mqtt/aedes/Dockerfile .
+endif
+
+docker_mqtt_verne:
+	docker build --tag=mainflux/mqtt-verne -f mqtt/verne/Dockerfile .
 
 dockers: $(DOCKERS) docker_ui docker_mqtt
-
-$(DOCKERS_DEV):
-	$(call make_docker_dev,$(@))
 
 dockers_dev: $(DOCKERS_DEV)
 
@@ -81,7 +103,7 @@ ui:
 	$(MAKE) -C ui
 
 mqtt:
-	cd mqtt && npm install
+	cd mqtt/aedes && npm install
 
 define docker_push
 	for svc in $(SERVICES); do \
@@ -112,12 +134,18 @@ rundev:
 	cd scripts && ./run.sh
 
 run:
-	docker-compose -f docker/docker-compose.yml up
+	docker-compose -f docker/docker-compose.yml -f docker/aedes.yml up
 
 runui:
 	$(MAKE) -C ui run
 
 runlora:
-	docker-compose -f docker/docker-compose.yml up -d
-	docker-compose -f docker/addons/influxdb-writer/docker-compose.yml up -d
-	docker-compose -f docker/addons/lora-adapter/docker-compose.yml up
+	docker-compose \
+		-f docker/docker-compose.yml \
+		-f docker/aedes.yml up \
+		-f docker/addons/influxdb-writer/docker-compose.yml \
+		-f docker/addons/lora-adapter/docker-compose.yml up \
+
+# Run all Mainflux core services except distributed tracing system - Jaeger. Recommended on gateways:
+rungw:
+	MF_JAEGER_URL= docker-compose -f docker/docker-compose.yml -f docker/aedes.yml up --scale jaeger=0
