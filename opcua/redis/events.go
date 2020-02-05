@@ -4,37 +4,24 @@
 package redis
 
 type createThingEvent struct {
-	id       string
-	metadata thingMetadata
-}
-
-type updateThingEvent struct {
-	id       string
-	metadata thingMetadata
+	id          string
+	opcuaNodeID string
 }
 
 type removeThingEvent struct {
 	id string
 }
 
-type thingMetadata struct {
-	ID string `json:"id"`
+type connectThingEvent struct {
+	chanID  string
+	thingID string
 }
 
 type createChannelEvent struct {
-	id       string
-	metadata channelMetadata
-}
-
-type updateChannelEvent struct {
-	id       string
-	metadata channelMetadata
+	id             string
+	opcuaServerURI string
 }
 
 type removeChannelEvent struct {
 	id string
-}
-
-type channelMetadata struct {
-	Namespace string `json:"namespace"`
 }

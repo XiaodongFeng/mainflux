@@ -66,7 +66,7 @@ func toJSON(data interface{}) string {
 }
 
 func newService(tokens map[string]string) things.Service {
-	users := mocks.NewUsersService(tokens)
+	auth := mocks.NewAuthService(tokens)
 	conns := make(chan mocks.Connection)
 	thingsRepo := mocks.NewThingRepository(conns)
 	channelsRepo := mocks.NewChannelRepository(thingsRepo, conns)
@@ -74,7 +74,7 @@ func newService(tokens map[string]string) things.Service {
 	thingCache := mocks.NewThingCache()
 	idp := mocks.NewIdentityProvider()
 
-	return things.New(users, thingsRepo, channelsRepo, chanCache, thingCache, idp)
+	return things.New(auth, thingsRepo, channelsRepo, chanCache, thingCache, idp)
 }
 
 func newServer(svc things.Service) *httptest.Server {
@@ -155,7 +155,7 @@ func TestCanAccessByKey(t *testing.T) {
 	require.Nil(t, err, fmt.Sprintf("failed to create channel: %s", err))
 	sch := schs[0]
 
-	err = svc.Connect(context.Background(), token, sch.ID, sth.ID)
+	err = svc.Connect(context.Background(), token, []string{sch.ID}, []string{sth.ID})
 	require.Nil(t, err, fmt.Sprintf("failed to connect thing and channel: %s", err))
 
 	car := canAccessByKeyReq{
@@ -234,7 +234,7 @@ func TestCanAccessByID(t *testing.T) {
 	require.Nil(t, err, fmt.Sprintf("failed to create channel: %s", err))
 	sch := schs[0]
 
-	err = svc.Connect(context.Background(), token, sch.ID, sth.ID)
+	err = svc.Connect(context.Background(), token, []string{sch.ID}, []string{sth.ID})
 	require.Nil(t, err, fmt.Sprintf("failed to connect thing and channel: %s", err))
 
 	car := canAccessByIDReq{

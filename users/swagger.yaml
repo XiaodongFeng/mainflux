@@ -102,11 +102,17 @@ paths:
         400:
           description: |
             Failed due to malformed JSON.
+          schema:
+            $ref: "#/definitions/Error"
         403:
           description: |
             Failed due to using invalid credentials.
+          schema:
+            $ref: "#/definitions/Error"
         415:
           description: Missing or invalid content type.
+          schema:
+            $ref: "#/definitions/Error"
         500:
           $ref: "#/responses/ServiceError"
   /password/reset-request:
@@ -121,6 +127,7 @@ paths:
           description: JSON-formatted document containing user email.
           in: body
           schema:
+            $ref: "#/parameters/Authorization"
             $ref: "#/definitions/PasswordResetRequest"
           required: true
       responses:
@@ -205,6 +212,7 @@ definitions:
       password:
         type: string
         format: password
+        minimum: 8
         description: Free-form account password used for acquiring auth token(s).
     required:
       - email
@@ -224,6 +232,12 @@ parameters:
   Authorization:
     name: Authorization
     description: User's access token.
+    in: header
+    type: string
+    required: true
+  Referer:
+    name: Referer
+    description: Host being sent by browser.
     in: header
     type: string
     required: true
@@ -264,9 +278,11 @@ definitions:
       password:
         type: string
         description: New password
+        minimum: 8
       confirm_password:
         type: string
         description: New password confirmed
+        minimum: 8
       token:
         type: string
         description: Reset token generated and sent in email
@@ -279,3 +295,9 @@ definitions:
       old_password:
         type: string
         description: Confirm password
+  Error:
+    type: object
+    properties:
+      error:
+        type: string
+        description: Error message

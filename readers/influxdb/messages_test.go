@@ -51,7 +51,6 @@ var (
 		Unit:       "U",
 		Time:       123456,
 		UpdateTime: 1234,
-		Link:       "link",
 	}
 )
 
@@ -108,17 +107,6 @@ func TestReadAll(t *testing.T) {
 				Offset:   0,
 				Limit:    10,
 				Messages: messages[0:10],
-			},
-		},
-		"read message page for too large limit": {
-			chanID: chanID,
-			offset: 0,
-			limit:  101,
-			page: readers.MessagesPage{
-				Total:    msgsNum,
-				Offset:   0,
-				Limit:    101,
-				Messages: messages[0:100],
 			},
 		},
 		"read message page for non-existent channel": {

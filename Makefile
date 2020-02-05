@@ -3,14 +3,15 @@
 
 BUILD_DIR = build
 SERVICES = users things http ws coap lora influxdb-writer influxdb-reader mongodb-writer \
-	mongodb-reader cassandra-writer cassandra-reader postgres-writer postgres-reader cli bootstrap opcua
+	mongodb-reader cassandra-writer cassandra-reader postgres-writer postgres-reader cli \
+	bootstrap opcua authn
 DOCKERS = $(addprefix docker_,$(SERVICES))
 DOCKERS_DEV = $(addprefix docker_dev_,$(SERVICES))
 CGO_ENABLED ?= 0
 GOARCH ?= amd64
 
 define compile_service
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) go build -ldflags "-s -w" -o ${BUILD_DIR}/mainflux-$(1) cmd/$(1)/main.go
+	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) go build -mod=vendor -ldflags "-s -w" -o ${BUILD_DIR}/mainflux-$(1) cmd/$(1)/main.go
 endef
 
 define make_docker
@@ -26,7 +27,7 @@ define make_docker
 endef
 
 define make_docker_dev
-	$(eval svc=$(subst docker_,,$(1)))
+	$(eval svc=$(subst docker_dev_,,$(1)))
 
 	docker build \
 		--no-cache \
@@ -37,7 +38,7 @@ endef
 
 all: $(SERVICES) mqtt
 
-.PHONY: all $(SERVICES) dockers dockers_dev latest release mqtt ui
+.PHONY: all $(SERVICES) dockers dockers_dev latest release mqtt
 
 clean:
 	rm -rf ${BUILD_DIR}
@@ -67,7 +68,7 @@ install:
 	cp ${BUILD_DIR}/* $(GOBIN)
 
 test:
-	go test -v -race -count 1 -tags test $(shell go list ./... | grep -v 'vendor\|cmd')
+	go test -mod=vendor -v -race -count 1 -tags test $(shell go list ./... | grep -v 'vendor\|cmd')
 
 proto:
 	protoc --gofast_out=plugins=grpc:. *.proto
@@ -81,9 +82,6 @@ $(DOCKERS):
 $(DOCKERS_DEV):
 	$(call make_docker_dev,$(@))
 
-docker_ui:
-	$(MAKE) -C ui docker
-
 docker_mqtt:
 	# MQTT Docker build must be done from root dir because it copies .proto files
 ifeq ($(GOARCH), arm)
@@ -95,12 +93,9 @@ endif
 docker_mqtt_verne:
 	docker build --tag=mainflux/mqtt-verne -f mqtt/verne/Dockerfile .
 
-dockers: $(DOCKERS) docker_ui docker_mqtt
+dockers: $(DOCKERS) docker_mqtt
 
 dockers_dev: $(DOCKERS_DEV)
-
-ui:
-	$(MAKE) -C ui
 
 mqtt:
 	cd mqtt/aedes && npm install
@@ -109,7 +104,6 @@ define docker_push
 	for svc in $(SERVICES); do \
 		docker push mainflux/$$svc:$(1); \
 	done
-	docker push mainflux/ui:$(1)
 	docker push mainflux/mqtt:$(1)
 endef
 
@@ -126,7 +120,6 @@ release:
 	for svc in $(SERVICES); do \
 		docker tag mainflux/$$svc mainflux/$$svc:$(version); \
 	done
-	docker tag mainflux/ui mainflux/ui:$(version)
 	docker tag mainflux/mqtt mainflux/mqtt:$(version)
 	$(call docker_push,$(version))
 
@@ -135,9 +128,6 @@ rundev:
 
 run:
 	docker-compose -f docker/docker-compose.yml -f docker/aedes.yml up
-
-runui:
-	$(MAKE) -C ui run
 
 runlora:
 	docker-compose \

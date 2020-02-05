@@ -7,7 +7,11 @@ import (
 	"context"
 	"regexp"
 	"strings"
+
+	"github.com/mainflux/mainflux/errors"
 )
+
+const minPassLen = 8
 
 var (
 	userRegexp    = regexp.MustCompile("^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.-]+$")
@@ -24,12 +28,12 @@ type User struct {
 }
 
 // Validate returns an error if user representation is invalid.
-func (u User) Validate() error {
-	if u.Email == "" || u.Password == "" {
+func (u User) Validate() errors.Error {
+	if !isEmail(u.Email) {
 		return ErrMalformedEntity
 	}
 
-	if !isEmail(u.Email) {
+	if len(u.Password) < minPassLen {
 		return ErrMalformedEntity
 	}
 
@@ -40,16 +44,16 @@ func (u User) Validate() error {
 type UserRepository interface {
 	// Save persists the user account. A non-nil error is returned to indicate
 	// operation failure.
-	Save(context.Context, User) error
+	Save(context.Context, User) errors.Error
 
 	// Update updates the user metadata.
-	UpdateUser(context.Context, User) error
+	UpdateUser(context.Context, User) errors.Error
 
 	// RetrieveByID retrieves user by its unique identifier (i.e. email).
-	RetrieveByID(context.Context, string) (User, error)
+	RetrieveByID(context.Context, string) (User, errors.Error)
 
 	// UpdatePassword updates password for user with given email
-	UpdatePassword(_ context.Context, email, password string) error
+	UpdatePassword(_ context.Context, email, password string) errors.Error
 }
 
 func isEmail(email string) bool {
